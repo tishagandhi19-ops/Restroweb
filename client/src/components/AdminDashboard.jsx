@@ -9,7 +9,6 @@ import {
   Edit2,
   Check,
   X,
-  ExternalLink,
   Printer,
   LogOut,
   AlertCircle,
@@ -18,8 +17,11 @@ import {
   Users,
   Eye,
   Loader2,
-  RefreshCw,
   Sparkles,
+  ShoppingBag,
+  Clock,
+  ChevronRight,
+  Wifi,
 } from 'lucide-react';
 import {
   getMenuItemsApi,
@@ -34,9 +36,13 @@ import {
   updateTableApi,
   deleteTableApi,
 } from '../api/tables';
+import {
+  getRestaurantOrdersApi,
+  updateOrderStatusApi,
+} from '../api/orders';
 
 export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
-  const [activeTab, setActiveTab] = useState('menu'); // 'menu' | 'tables'
+  const [activeTab, setActiveTab] = useState('menu'); // 'menu' | 'tables' | 'orders'
   const token = localStorage.getItem('restoweb_admin_token') || admin.token;
 
   // Alerts
@@ -75,6 +81,10 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
   // Print/Inspect QR Modal
   const [printTable, setPrintTable] = useState(null);
 
+  // Live Orders State
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+
   // Default Categories
   const defaultCategories = ['Starters', 'Main Course', 'Desserts', 'Beverages', 'Sides'];
 
@@ -104,9 +114,27 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
     }
   };
 
+  // Load Orders
+  const loadOrders = async () => {
+    try {
+      setOrdersLoading(true);
+      const ordersList = await getRestaurantOrdersApi(token);
+      setOrders(ordersList || []);
+    } catch (err) {
+      console.error('Failed to load orders:', err);
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadMenu();
     loadTables();
+    loadOrders();
+
+    // Auto-refresh orders every 12 seconds
+    const interval = setInterval(loadOrders, 12000);
+    return () => clearInterval(interval);
   }, []);
 
   const showNotification = (msg, isErr = false) => {
@@ -241,6 +269,16 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
     }
   };
 
+  const handleUpdateOrderStatus = async (orderId, newStatus) => {
+    try {
+      const updated = await updateOrderStatusApi(token, orderId, newStatus);
+      setOrders((prev) => prev.map((o) => (o._id === orderId ? updated : o)));
+      showNotification(`Order status updated to ${newStatus}.`);
+    } catch (err) {
+      showNotification(err.message, true);
+    }
+  };
+
   const getTableDiningUrl = (tableNumber) => {
     const origin = window.location.origin;
     return `${origin}/?restaurantId=${admin._id}&table=${encodeURIComponent(tableNumber)}`;
@@ -303,7 +341,7 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
               onClick={() => setActiveTab('menu')}
             >
               <Layers size={17} />
-              <span>Menu Management</span>
+              <span>Menu Items</span>
               <span className="count-pill">{menuItems.length}</span>
             </button>
 
@@ -315,6 +353,19 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
               <QrCode size={17} />
               <span>Tables & QR Codes</span>
               <span className="count-pill">{tables.length}</span>
+            </button>
+
+            <button
+              type="button"
+              className={`nav-tab-btn ${activeTab === 'orders' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('orders');
+                loadOrders();
+              }}
+            >
+              <ShoppingBag size={17} />
+              <span>Live Orders</span>
+              {orders.length > 0 && <span className="count-pill highlight">{orders.length}</span>}
             </button>
           </div>
 
@@ -351,7 +402,7 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
 
       {/* Main Content Area */}
       <main className="admin-main-container">
-        {activeTab === 'menu' ? (
+        {activeTab === 'menu' && (
           /* ========================================================
              MENU MANAGEMENT SECTION
              ======================================================== */
@@ -486,7 +537,9 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
               </div>
             )}
           </div>
-        ) : (
+        )}
+
+        {activeTab === 'tables' && (
           /* ========================================================
              TABLES & QR CODES MANAGEMENT SECTION
              ======================================================== */
@@ -612,6 +665,117 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'orders' && (
+          /* ========================================================
+             LIVE TABLE ORDERS SECTION
+             ======================================================== */
+          <div className="section-block">
+            <div className="section-header">
+              <div>
+                <h1 className="section-title">Live Table Orders</h1>
+                <p className="section-subtitle">
+                  Orders placed in real-time by guests seated at your dining tables after scanning their QR code.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={loadOrders}
+                disabled={ordersLoading}
+              >
+                <Loader2 size={14} className={ordersLoading ? 'spinner' : ''} />
+                <span>Refresh Orders</span>
+              </button>
+            </div>
+
+            {ordersLoading && orders.length === 0 ? (
+              <div className="loading-state">
+                <Loader2 size={28} className="spinner" />
+                <span>Checking incoming orders...</span>
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="empty-state-card">
+                <ShoppingBag size={44} opacity={0.35} />
+                <h3>No Live Table Orders Yet</h3>
+                <p>
+                  When guests scan their table's QR code and tap "Send Order", tickets will appear here
+                  instantly with their table number, selected dishes, and special notes.
+                </p>
+              </div>
+            ) : (
+              <div className="orders-grid">
+                {orders.map((order) => (
+                  <div key={order._id} className="order-ticket-card">
+                    <div className="order-ticket-header">
+                      <div>
+                        <span className="order-table-badge">Table {order.tableNumber}</span>
+                        <div className="order-time">
+                          <Clock size={12} />
+                          <span>{new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      </div>
+
+                      <div className={`order-status-pill status-${order.status.toLowerCase()}`}>
+                        {order.status}
+                      </div>
+                    </div>
+
+                    <div className="order-items-list">
+                      {order.items.map((item, idx) => (
+                        <div key={idx} className="order-item-line">
+                          <span className="order-item-qty">{item.quantity}x</span>
+                          <span className="order-item-name">{item.name}</span>
+                          <span className="order-item-price">${(item.price * item.quantity).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {order.notes && (
+                      <div className="order-notes-box">
+                        <strong>Guest Note:</strong> {order.notes}
+                      </div>
+                    )}
+
+                    <div className="order-ticket-footer">
+                      <div className="order-total-amount">
+                        <span>Total:</span>
+                        <strong>${order.totalAmount.toFixed(2)}</strong>
+                      </div>
+
+                      <div className="order-status-actions">
+                        {order.status === 'Received' && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleUpdateOrderStatus(order._id, 'Preparing')}
+                          >
+                            Mark Preparing
+                          </button>
+                        )}
+                        {order.status === 'Preparing' && (
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            onClick={() => handleUpdateOrderStatus(order._id, 'Served')}
+                          >
+                            Mark Served
+                          </button>
+                        )}
+                        {order.status === 'Served' && (
+                          <span className="order-completed-label">
+                            <CheckCircle2 size={14} color="#15803d" /> Served
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

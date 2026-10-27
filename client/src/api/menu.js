@@ -1,7 +1,7 @@
-const API_URL = 'http://localhost:5000/api/menu';
+import { getApiBaseUrl } from './config';
 
 export async function getMenuItemsApi(token) {
-  const response = await fetch(API_URL, {
+  const response = await fetch(`${getApiBaseUrl()}/menu`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -12,7 +12,7 @@ export async function getMenuItemsApi(token) {
 }
 
 export async function createMenuItemApi(token, itemData) {
-  const response = await fetch(API_URL, {
+  const response = await fetch(`${getApiBaseUrl()}/menu`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -26,7 +26,7 @@ export async function createMenuItemApi(token, itemData) {
 }
 
 export async function updateMenuItemApi(token, id, itemData) {
-  const response = await fetch(`${API_URL}/${id}`, {
+  const response = await fetch(`${getApiBaseUrl()}/menu/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -40,7 +40,7 @@ export async function updateMenuItemApi(token, id, itemData) {
 }
 
 export async function deleteMenuItemApi(token, id) {
-  const response = await fetch(`${API_URL}/${id}`, {
+  const response = await fetch(`${getApiBaseUrl()}/menu/${id}`, {
     method: 'DELETE',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -52,7 +52,7 @@ export async function deleteMenuItemApi(token, id) {
 }
 
 export async function getPublicMenuApi(restaurantId) {
-  const response = await fetch(`${API_URL}/public/${restaurantId}`);
+  const response = await fetch(`${getApiBaseUrl()}/menu/public/${restaurantId}`);
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch public menu');
   return data;

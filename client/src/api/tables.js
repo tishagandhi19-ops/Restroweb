@@ -1,7 +1,7 @@
-const API_URL = 'http://localhost:5000/api/tables';
+import { getApiBaseUrl } from './config';
 
 export async function getTablesApi(token) {
-  const response = await fetch(API_URL, {
+  const response = await fetch(`${getApiBaseUrl()}/tables`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -12,7 +12,7 @@ export async function getTablesApi(token) {
 }
 
 export async function createTableApi(token, tableData) {
-  const response = await fetch(API_URL, {
+  const response = await fetch(`${getApiBaseUrl()}/tables`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -26,7 +26,7 @@ export async function createTableApi(token, tableData) {
 }
 
 export async function createBulkTablesApi(token, bulkData) {
-  const response = await fetch(`${API_URL}/bulk`, {
+  const response = await fetch(`${getApiBaseUrl()}/tables/bulk`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -40,7 +40,7 @@ export async function createBulkTablesApi(token, bulkData) {
 }
 
 export async function updateTableApi(token, id, tableData) {
-  const response = await fetch(`${API_URL}/${id}`, {
+  const response = await fetch(`${getApiBaseUrl()}/tables/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -54,7 +54,7 @@ export async function updateTableApi(token, id, tableData) {
 }
 
 export async function deleteTableApi(token, id) {
-  const response = await fetch(`${API_URL}/${id}`, {
+  const response = await fetch(`${getApiBaseUrl()}/tables/${id}`, {
     method: 'DELETE',
     headers: {
       Authorization: `Bearer ${token}`,

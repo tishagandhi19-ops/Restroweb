@@ -1,5 +1,7 @@
-const API_BASE_URL = 'http://localhost:5000/api/auth';
-const HEALTH_URL = 'http://localhost:5000/api/health';
+import { getApiBaseUrl } from './config';
+
+const getAuthUrl = () => `${getApiBaseUrl()}/auth`;
+const getHealthUrl = () => `${getApiBaseUrl()}/health`;
 
 /**
  * Helper to safely extract error message from response or throw descriptive network error
@@ -38,7 +40,7 @@ export async function checkBackendHealthApi() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2500);
 
-    const response = await fetch(HEALTH_URL, {
+    const response = await fetch(getHealthUrl(), {
       method: 'GET',
       signal: controller.signal,
     });
@@ -52,7 +54,7 @@ export async function checkBackendHealthApi() {
   } catch (err) {
     return {
       online: false,
-      message: 'Server unreachable at http://localhost:5000. Please ensure the backend is running.',
+      message: 'Server unreachable. Please ensure the backend is running.',
     };
   }
 }
@@ -62,7 +64,7 @@ export async function checkBackendHealthApi() {
  */
 export async function registerAdminApi(userData) {
   try {
-    const response = await fetch(`${API_BASE_URL}/register`, {
+    const response = await fetch(`${getAuthUrl()}/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -73,7 +75,7 @@ export async function registerAdminApi(userData) {
     return await parseApiResponse(response);
   } catch (err) {
     if (err.name === 'TypeError' && err.message.includes('fetch')) {
-      const netError = new Error('Cannot connect to RestoWeb Server (http://localhost:5000). Please ensure your backend is started.');
+      const netError = new Error('Cannot connect to RestoWeb Server. Please ensure your backend is started.');
       netError.isNetworkError = true;
       throw netError;
     }
@@ -86,7 +88,7 @@ export async function registerAdminApi(userData) {
  */
 export async function loginAdminApi(credentials) {
   try {
-    const response = await fetch(`${API_BASE_URL}/login`, {
+    const response = await fetch(`${getAuthUrl()}/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -97,7 +99,7 @@ export async function loginAdminApi(credentials) {
     return await parseApiResponse(response);
   } catch (err) {
     if (err.name === 'TypeError' && err.message.includes('fetch')) {
-      const netError = new Error('Cannot connect to RestoWeb Server (http://localhost:5000). Please ensure your backend is started.');
+      const netError = new Error('Cannot connect to RestoWeb Server. Please ensure your backend is started.');
       netError.isNetworkError = true;
       throw netError;
     }
@@ -110,7 +112,7 @@ export async function loginAdminApi(credentials) {
  */
 export async function getAdminProfileApi(token) {
   try {
-    const response = await fetch(`${API_BASE_URL}/me`, {
+    const response = await fetch(`${getAuthUrl()}/me`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
