@@ -1,0 +1,52 @@
+# ==============================================================================
+# RestoWeb — Root .gitignore
+# ==============================================================================
+
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Environment & Sensitive Files
+.env
+.env.*
+!.env.example
+*.env
+client/.env
+server/.env
+
+# Production Builds & Distribution
+dist/
+build/
+client/dist/
+dist-ssr/
+
+# Logs & Debugging
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs & Code Editors
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Temporary & Cache files
+.eslintcache
+.cache/
+tmp/
+temp/
