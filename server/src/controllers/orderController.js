@@ -102,3 +102,58 @@ export const updateOrderStatus = async (req, res) => {
     });
   }
 };
+
+// @desc    Get real-time status of orders placed during current customer dining session
+// @route   POST /api/orders/public/session-orders
+// @access  Public (Guest seated at table)
+export const getSessionOrders = async (req, res) => {
+  try {
+    const { orderIds, restaurantId, tableNumber, customerPhone, since } = req.body;
+
+    const queryFilters = [];
+
+    // Filter 1: Explicit order IDs from this session
+    if (Array.isArray(orderIds) && orderIds.length > 0) {
+      queryFilters.push({ _id: { $in: orderIds } });
+    }
+
+    // Filter 2: Session-based fallback strictly created on or after session start time
+    if (restaurantId && tableNumber && since) {
+      const sessionStart = new Date(Number(since) || since);
+      if (!isNaN(sessionStart.getTime())) {
+        const fallbackQuery = {
+          admin: restaurantId,
+          tableNumber: String(tableNumber).trim(),
+          createdAt: { $gte: sessionStart },
+        };
+        if (customerPhone) {
+          fallbackQuery.customerPhone = String(customerPhone).trim();
+        }
+        queryFilters.push(fallbackQuery);
+      }
+    }
+
+    if (queryFilters.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: [],
+      });
+    }
+
+    // Find orders that match either the session orderIds OR current session timestamp filter
+    const orders = await Order.find({ $or: queryFilters }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: orders.length,
+      data: orders,
+    });
+  } catch (error) {
+    console.error('getSessionOrders error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to retrieve session orders.',
+    });
+  }
+};

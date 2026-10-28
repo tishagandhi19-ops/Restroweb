@@ -22,6 +22,7 @@ import {
   Sparkles,
   ShoppingBag,
   Clock,
+  Calendar,
   ChevronRight,
   Wifi,
 } from 'lucide-react';
@@ -86,6 +87,10 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
   // Live Orders State
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
+  const [orderDateFilter, setOrderDateFilter] = useState('today'); // 'today' | 'all'
+  const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+  const [printReceiptOrder, setPrintReceiptOrder] = useState(null);
 
   // Default Categories
   const defaultCategories = ['Starters', 'Main Course', 'Desserts', 'Beverages', 'Sides'];
@@ -280,6 +285,47 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
       showNotification(err.message, true);
     }
   };
+
+  const isOrderFromToday = (dateStr) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    const today = new Date();
+    return (
+      d.getDate() === today.getDate() &&
+      d.getMonth() === today.getMonth() &&
+      d.getFullYear() === today.getFullYear()
+    );
+  };
+
+  const filteredOrders = orders.filter((order) => {
+    // 1. Date filter (today vs all)
+    if (orderDateFilter === 'today' && !isOrderFromToday(order.createdAt)) {
+      return false;
+    }
+
+    // 2. Status filter
+    if (orderStatusFilter !== 'all') {
+      if (orderStatusFilter === 'active') {
+        if (order.status === 'Served' || order.status === 'Completed' || order.status === 'Cancelled') {
+          return false;
+        }
+      } else if (order.status?.toLowerCase() !== orderStatusFilter.toLowerCase()) {
+        return false;
+      }
+    }
+
+    // 3. Search query: Name, Phone, Table Number, or Order ID
+    if (orderSearchQuery.trim()) {
+      const q = orderSearchQuery.trim().toLowerCase();
+      const matchName = (order.customerName || '').toLowerCase().includes(q);
+      const matchPhone = (order.customerPhone || '').toLowerCase().includes(q);
+      const matchTable = (order.tableNumber || '').toLowerCase().includes(q);
+      const matchId = (order._id || '').toLowerCase().includes(q);
+      return matchName || matchPhone || matchTable || matchId;
+    }
+
+    return true;
+  });
 
   const getTableDiningUrl = (tableNumber) => {
     const origin = window.location.origin;
@@ -696,23 +742,96 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
               </button>
             </div>
 
+            {/* Live Orders Search & Filters Bar */}
+            <div className="orders-filters-bar">
+              <div className="orders-search-input-wrap">
+                <Search size={16} className="search-icon" />
+                <input
+                  type="text"
+                  className="orders-search-input"
+                  placeholder="Search today's orders by customer name, phone, or table..."
+                  value={orderSearchQuery}
+                  onChange={(e) => setOrderSearchQuery(e.target.value)}
+                />
+                {orderSearchQuery && (
+                  <button
+                    type="button"
+                    className="search-clear-btn"
+                    onClick={() => setOrderSearchQuery('')}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="orders-filter-controls">
+                {/* Date Filter: Today vs All */}
+                <div className="orders-date-toggle">
+                  <button
+                    type="button"
+                    className={`toggle-btn ${orderDateFilter === 'today' ? 'active' : ''}`}
+                    onClick={() => setOrderDateFilter('today')}
+                  >
+                    <Calendar size={13} />
+                    <span>Today ({orders.filter((o) => isOrderFromToday(o.createdAt)).length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`toggle-btn ${orderDateFilter === 'all' ? 'active' : ''}`}
+                    onClick={() => setOrderDateFilter('all')}
+                  >
+                    <span>All Time ({orders.length})</span>
+                  </button>
+                </div>
+
+                {/* Status Filter Pills */}
+                <div className="orders-status-pills">
+                  {['all', 'active', 'received', 'preparing', 'ready', 'served'].map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      className={`status-filter-pill ${orderStatusFilter === st ? 'active' : ''}`}
+                      onClick={() => setOrderStatusFilter(st)}
+                    >
+                      {st === 'all' ? 'All Status' : st.charAt(0).toUpperCase() + st.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {ordersLoading && orders.length === 0 ? (
               <div className="loading-state">
                 <Loader2 size={28} className="spinner" />
                 <span>Checking incoming orders...</span>
               </div>
-            ) : orders.length === 0 ? (
+            ) : filteredOrders.length === 0 ? (
               <div className="empty-state-card">
                 <ShoppingBag size={44} opacity={0.35} />
-                <h3>No Live Table Orders Yet</h3>
+                <h3>No Orders Matching Filter</h3>
                 <p>
-                  When guests scan their table's QR code and tap "Send Order", tickets will appear here
-                  instantly with their table number, selected dishes, and special notes.
+                  {orderSearchQuery || orderDateFilter === 'today'
+                    ? 'No orders found matching your search or date criteria. Try searching for a different name/phone or switch to "All Time".'
+                    : 'When guests scan their table\'s QR code and tap "Send Order", tickets will appear here instantly.'}
                 </p>
+                {(orderSearchQuery || orderStatusFilter !== 'all' || orderDateFilter !== 'today') && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setOrderSearchQuery('');
+                      setOrderStatusFilter('all');
+                      setOrderDateFilter('today');
+                    }}
+                    style={{ marginTop: '10px' }}
+                  >
+                    Reset Filters
+                  </button>
+                )}
               </div>
             ) : (
               <div className="orders-grid">
-                {orders.map((order) => (
+                {filteredOrders.map((order) => (
                   <div key={order._id} className="order-ticket-card">
                     <div className="order-ticket-header">
                       <div>
@@ -720,6 +839,9 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
                         <div className="order-time">
                           <Clock size={12} />
                           <span>{new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span className="order-date-text">
+                            • {new Date(order.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                          </span>
                         </div>
                       </div>
 
@@ -761,33 +883,54 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
                     <div className="order-ticket-footer">
                       <div className="order-total-amount">
                         <span>Total:</span>
-                        <strong>${order.totalAmount.toFixed(2)}</strong>
+                        <strong>${Number(order.totalAmount || 0).toFixed(2)}</strong>
                       </div>
 
-                      <div className="order-status-actions">
-                        {order.status === 'Received' && (
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => handleUpdateOrderStatus(order._id, 'Preparing')}
-                          >
-                            Mark Preparing
-                          </button>
-                        )}
-                        {order.status === 'Preparing' && (
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            onClick={() => handleUpdateOrderStatus(order._id, 'Served')}
-                          >
-                            Mark Served
-                          </button>
-                        )}
-                        {order.status === 'Served' && (
-                          <span className="order-completed-label">
-                            <CheckCircle2 size={14} color="#15803d" /> Served
-                          </span>
-                        )}
+                      <div className="order-card-action-buttons">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm btn-print-receipt"
+                          onClick={() => setPrintReceiptOrder(order)}
+                          title="Print thermal receipt or bill voucher"
+                        >
+                          <Printer size={13} />
+                          <span>Print Bill</span>
+                        </button>
+
+                        <div className="order-status-actions">
+                          {order.status === 'Received' && (
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleUpdateOrderStatus(order._id, 'Preparing')}
+                            >
+                              Mark Preparing
+                            </button>
+                          )}
+                          {order.status === 'Preparing' && (
+                            <button
+                              type="button"
+                              className="btn btn-purple btn-sm"
+                              onClick={() => handleUpdateOrderStatus(order._id, 'Ready')}
+                            >
+                              Mark Ready
+                            </button>
+                          )}
+                          {order.status === 'Ready' && (
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleUpdateOrderStatus(order._id, 'Served')}
+                            >
+                              Mark Served
+                            </button>
+                          )}
+                          {order.status === 'Served' && (
+                            <span className="order-completed-label">
+                              <CheckCircle2 size={14} color="#15803d" /> Served
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1115,6 +1258,139 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
                 <Printer size={16} />
                 <span>Print Stand</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: PRINT ORDER RECEIPT / BILL VOUCHER
+          ======================================================== */}
+      {printReceiptOrder && (
+        <div className="modal-backdrop receipt-modal-backdrop">
+          <div className="modal-card receipt-modal-card">
+            <div className="receipt-modal-actions no-print">
+              <div className="receipt-modal-title">
+                <Printer size={18} />
+                <span>Order Receipt Voucher</span>
+              </div>
+              <div className="receipt-btn-group">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => window.print()}
+                >
+                  <Printer size={14} />
+                  <span>Print Receipt</span>
+                </button>
+                <button
+                  type="button"
+                  className="modal-close-btn"
+                  onClick={() => setPrintReceiptOrder(null)}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Receipt Thermal Paper Design */}
+            <div className="receipt-paper" id="printable-receipt">
+              <div className="receipt-header">
+                <h2 className="receipt-resto-name">{admin.restaurantName}</h2>
+                <div className="receipt-subtitle">Guest Dining Receipt / Tax Invoice</div>
+                <div className="receipt-divider-dashed" />
+              </div>
+
+              <div className="receipt-meta">
+                <div className="receipt-meta-row">
+                  <span>Table:</span>
+                  <strong>Table {printReceiptOrder.tableNumber}</strong>
+                </div>
+                <div className="receipt-meta-row">
+                  <span>Order ID:</span>
+                  <span>#{printReceiptOrder._id.slice(-6).toUpperCase()}</span>
+                </div>
+                <div className="receipt-meta-row">
+                  <span>Date & Time:</span>
+                  <span>
+                    {new Date(printReceiptOrder.createdAt).toLocaleDateString()}{' '}
+                    {new Date(printReceiptOrder.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div className="receipt-meta-row">
+                  <span>Customer:</span>
+                  <strong>{printReceiptOrder.customerName || 'Guest Diner'}</strong>
+                </div>
+                {printReceiptOrder.customerPhone && (
+                  <div className="receipt-meta-row">
+                    <span>Phone:</span>
+                    <span>{printReceiptOrder.customerPhone}</span>
+                  </div>
+                )}
+                <div className="receipt-meta-row">
+                  <span>Status:</span>
+                  <span className={`receipt-status-tag status-${printReceiptOrder.status.toLowerCase()}`}>
+                    {printReceiptOrder.status}
+                  </span>
+                </div>
+              </div>
+
+              <div className="receipt-divider-dashed" />
+
+              {/* Items Table */}
+              <div className="receipt-items-table">
+                <div className="receipt-item-header">
+                  <span className="col-qty">Qty</span>
+                  <span className="col-item">Item</span>
+                  <span className="col-price">Price</span>
+                  <span className="col-total">Total</span>
+                </div>
+                <div className="receipt-divider-solid" />
+                {printReceiptOrder.items?.map((it, idx) => (
+                  <div key={idx} className="receipt-item-line">
+                    <span className="col-qty">{it.quantity}x</span>
+                    <span className="col-item">{it.name}</span>
+                    <span className="col-price">${Number(it.price).toFixed(2)}</span>
+                    <span className="col-total">
+                      ${(Number(it.price) * Number(it.quantity)).toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="receipt-divider-dashed" />
+
+              {/* Totals */}
+              <div className="receipt-totals">
+                <div className="receipt-total-row">
+                  <span>Subtotal:</span>
+                  <span>${Number(printReceiptOrder.totalAmount || 0).toFixed(2)}</span>
+                </div>
+                <div className="receipt-total-row">
+                  <span>Tax & Service:</span>
+                  <span>$0.00</span>
+                </div>
+                <div className="receipt-divider-solid" />
+                <div className="receipt-total-row grand-total">
+                  <span>Grand Total:</span>
+                  <strong>${Number(printReceiptOrder.totalAmount || 0).toFixed(2)}</strong>
+                </div>
+              </div>
+
+              {printReceiptOrder.notes && (
+                <>
+                  <div className="receipt-divider-dashed" />
+                  <div className="receipt-notes">
+                    <strong>Kitchen Remarks:</strong> "{printReceiptOrder.notes}"
+                  </div>
+                </>
+              )}
+
+              <div className="receipt-divider-dashed" />
+              <div className="receipt-footer">
+                <p>Thank you for dining with us!</p>
+                <p className="receipt-footer-sub">Please visit {admin.restaurantName} again.</p>
+              </div>
             </div>
           </div>
         </div>

@@ -17,6 +17,22 @@ export async function placeTableOrderApi(orderData) {
 }
 
 /**
+ * Public: Get real-time status of orders placed in the current session
+ */
+export async function getSessionOrdersApi(payload) {
+  const response = await fetch(`${getApiBaseUrl()}/orders/public/session-orders`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to fetch session orders.');
+  return data.data || [];
+}
+
+/**
  * Admin retrieves all restaurant orders
  */
 export async function getRestaurantOrdersApi(token) {

@@ -3,13 +3,11 @@ import {
   UtensilsCrossed,
   Search,
   MapPin,
-  ArrowLeft,
   Loader2,
   AlertCircle,
   Plus,
   Minus,
   ShoppingBag,
-  Bell,
   CheckCircle2,
   X,
   ChefHat,
@@ -19,9 +17,13 @@ import {
   Edit3,
   Check,
   RefreshCw,
+  ReceiptText,
+  CookingPot,
+  Sparkles,
+  ChevronRight,
 } from 'lucide-react';
 import { getPublicMenuApi } from '../api/menu';
-import { placeTableOrderApi } from '../api/orders';
+import { placeTableOrderApi, getSessionOrdersApi } from '../api/orders';
 import { verifyPublicTableApi } from '../api/tables';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -30,7 +32,31 @@ function getSessionKey(restaurantId, tableNumber) {
   return `restoweb_customer_${restaurantId}_table_${String(tableNumber || '1').trim().toLowerCase()}`;
 }
 
-export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAdmin }) {
+// Status step mapping for live visual tracker
+const ORDER_STEPS = [
+  { key: 'Received', label: 'Received', desc: 'Kitchen received your ticket' },
+  { key: 'Preparing', label: 'Preparing', desc: 'Chef is cooking your dishes' },
+  { key: 'Ready', label: 'Ready', desc: 'Plated & coming to your table' },
+  { key: 'Served', label: 'Served', desc: 'Delivered to your table' },
+];
+
+function getStepIndex(status) {
+  switch (status) {
+    case 'Received':
+      return 0;
+    case 'Preparing':
+      return 1;
+    case 'Ready':
+      return 2;
+    case 'Served':
+    case 'Completed':
+      return 3;
+    default:
+      return 0;
+  }
+}
+
+export default function CustomerMenuView({ restaurantId, tableNumber }) {
   const [loading, setLoading] = useState(true);
   const [tableData, setTableData] = useState(null);
   const [error, setError] = useState('');
@@ -54,8 +80,10 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
   const [placingOrder, setPlacingOrder] = useState(false);
   const [placedOrder, setPlacedOrder] = useState(null);
 
-  // Call waiter toast notification
-  const [callWaiterNotice, setCallWaiterNotice] = useState(false);
+  // Current Session Orders & Live Tracking State
+  const [sessionOrders, setSessionOrders] = useState([]);
+  const [isOrdersModalOpen, setIsOrdersModalOpen] = useState(false);
+  const [refreshingOrders, setRefreshingOrders] = useState(false);
 
   // Quick remarks suggestion chips
   const quickRemarks = [
@@ -173,6 +201,39 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
     initTableAndMenu();
   }, [restaurantId, tableNumber, checkStoredSession]);
 
+  // Fetch real-time orders placed exclusively in the current session
+  const fetchLiveSessionOrders = useCallback(async (isManualRefresh = false) => {
+    if (!customer || !restaurantId || !tableNumber) return;
+
+    if (isManualRefresh) setRefreshingOrders(true);
+    try {
+      const orders = await getSessionOrdersApi({
+        orderIds: customer.orderIds || [],
+        restaurantId,
+        tableNumber: String(tableNumber || '1').trim(),
+        customerPhone: customer.customerPhone,
+        since: customer.createdAt,
+      });
+      setSessionOrders(orders || []);
+    } catch (err) {
+      console.warn('Live order polling error:', err.message);
+    } finally {
+      if (isManualRefresh) setRefreshingOrders(false);
+    }
+  }, [customer, restaurantId, tableNumber]);
+
+  // Real-time polling every 5 seconds for current session orders
+  useEffect(() => {
+    if (!customer) return;
+
+    fetchLiveSessionOrders();
+    const interval = setInterval(() => {
+      fetchLiveSessionOrders();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [customer, fetchLiveSessionOrders]);
+
   // Handle Customer Form Submit (Name & Mobile)
   const handleCustomerSubmit = (e) => {
     e.preventDefault();
@@ -194,7 +255,8 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
       customerPhone: phone.trim(),
       restaurantId,
       tableNumber: tableNumber || '1',
-      createdAt: Date.now(),
+      orderIds: customer?.orderIds || [],
+      createdAt: customer?.createdAt || Date.now(),
       lastActiveAt: Date.now(),
     };
 
@@ -291,11 +353,20 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
 
       const result = await placeTableOrderApi(orderPayload);
 
-      // Update session lastActiveAt in localStorage
+      // Track orderId in current customer session in localStorage
+      const updatedOrderIds = [...(activeCustomer.orderIds || []), result._id];
+      const updatedSession = {
+        ...activeCustomer,
+        orderIds: updatedOrderIds,
+        lastActiveAt: Date.now(),
+      };
+
       const key = getSessionKey(restaurantId, tableNumber);
-      const updatedSession = { ...activeCustomer, lastActiveAt: Date.now() };
       localStorage.setItem(key, JSON.stringify(updatedSession));
       setCustomer(updatedSession);
+
+      // Instantly insert order into local state
+      setSessionOrders((prev) => [result, ...prev]);
 
       setPlacedOrder({
         ...result,
@@ -312,12 +383,6 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
     }
   };
 
-  // Call waiter handler
-  const handleCallWaiter = () => {
-    setCallWaiterNotice(true);
-    setTimeout(() => setCallWaiterNotice(false), 4500);
-  };
-
   const categories = ['All', ...new Set(menuItems.map((item) => item.category).filter(Boolean))];
 
   const filteredItems = menuItems.filter((item) => {
@@ -327,6 +392,12 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
       (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchCategory && matchSearch;
   });
+
+  // Determine latest active order for live banner
+  const latestActiveOrder =
+    sessionOrders.find(
+      (o) => o.status === 'Received' || o.status === 'Preparing' || o.status === 'Ready'
+    ) || sessionOrders[0];
 
   if (loading) {
     return (
@@ -356,16 +427,6 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
               <RefreshCw size={15} />
               <span>Retry Verification</span>
             </button>
-            {onBackToAdmin && (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={onBackToAdmin}
-              >
-                <ArrowLeft size={15} />
-                <span>Return to Admin</span>
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -406,28 +467,26 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
             </div>
           </div>
 
+          {/* Header Action: My Orders Button with Live Status Badge */}
           <div className="guest-header-actions">
             <button
               type="button"
-              className="guest-waiter-btn"
-              onClick={handleCallWaiter}
-              title="Call waiter or assistance for this table"
+              className={`guest-my-orders-btn ${sessionOrders.length > 0 ? 'has-orders' : ''}`}
+              onClick={() => setIsOrdersModalOpen(true)}
+              title="View your current session orders & live status"
             >
-              <Bell size={15} />
-              <span>Call Waiter</span>
+              <ReceiptText size={16} />
+              <span>My Orders</span>
+              {sessionOrders.length > 0 && (
+                <span className="orders-count-badge">{sessionOrders.length}</span>
+              )}
+              {latestActiveOrder && (
+                <span
+                  className={`live-pulse-dot status-${latestActiveOrder.status.toLowerCase()}`}
+                  style={{ width: 7, height: 7, marginLeft: 2 }}
+                />
+              )}
             </button>
-
-            {onBackToAdmin && (
-              <button
-                type="button"
-                className="guest-back-btn"
-                onClick={onBackToAdmin}
-                title="Return to Admin Management"
-              >
-                <ArrowLeft size={14} />
-                <span>Admin</span>
-              </button>
-            )}
           </div>
         </div>
       </header>
@@ -450,15 +509,69 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
         </div>
       )}
 
-      {/* Call Waiter Toast */}
-      {callWaiterNotice && (
-        <div className="guest-toast-notice">
-          <Bell size={16} />
-          <span>Waiter notified for <strong>Table {tableNumber || '1'}</strong>! A server is on their way.</span>
+      {/* Real-Time Live Status Tracker Card (Shows when an active session order exists) */}
+      {latestActiveOrder && (
+        <div className={`guest-live-status-card card-status-${latestActiveOrder.status.toLowerCase()}`} onClick={() => setIsOrdersModalOpen(true)}>
+          <div className="live-status-header">
+            <div className="live-status-title-wrap">
+              <span className={`live-pulse-dot status-${latestActiveOrder.status.toLowerCase()}`} />
+              <div className="live-status-title">
+                {latestActiveOrder.status === 'Ready'
+                  ? '🎉 Dishes Plated & Ready!'
+                  : latestActiveOrder.status === 'Preparing'
+                  ? '🍳 Cooking in Kitchen'
+                  : latestActiveOrder.status === 'Served' || latestActiveOrder.status === 'Completed'
+                  ? '✨ Served at Table'
+                  : '⏳ Order Received'}
+              </div>
+              <span className="live-status-order-id">
+                (Order #{latestActiveOrder._id.slice(-5).toUpperCase()})
+              </span>
+            </div>
+            <button type="button" className="live-status-view-link">
+              <span>View All ({sessionOrders.length})</span>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+
+          {/* Stepper Progress Bar */}
+          <div className="live-status-stepper">
+            {ORDER_STEPS.map((step, idx) => {
+              const currentStepIdx = getStepIndex(latestActiveOrder.status);
+              const isCompleted = idx < currentStepIdx;
+              const isCurrent = idx === currentStepIdx;
+
+              return (
+                <div
+                  key={step.key}
+                  className={`stepper-step ${isCompleted ? 'completed' : ''} ${isCurrent ? 'active' : ''}`}
+                >
+                  <div className="step-circle">
+                    {isCompleted ? <Check size={12} /> : idx + 1}
+                  </div>
+                  <span className="step-label">{step.label}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="live-status-hint">
+            <Clock size={12} />
+            <span>
+              {latestActiveOrder.status === 'Ready'
+                ? `Dishes are ready! Our server is delivering to Table ${tableNumber || 'your table'}.`
+                : latestActiveOrder.status === 'Preparing'
+                ? 'The chef is actively preparing your dishes. Sit tight!'
+                : latestActiveOrder.status === 'Served'
+                ? 'All dishes have been delivered to your table. Enjoy your meal!'
+                : 'Your order has been received by the kitchen and is queued.'}
+              {' '}• Live status updates active
+            </span>
+          </div>
         </div>
       )}
 
-      {/* Order Success Banner */}
+      {/* Order Placed Success Banner */}
       {placedOrder && (
         <div className="guest-order-success-card">
           <div className="success-icon-wrap">
@@ -467,7 +580,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
           <div className="success-content">
             <div className="success-title">Order Sent to Kitchen!</div>
             <div className="success-desc">
-              Your order for <strong>Table {tableNumber}</strong> has been received. Thank you, <strong>{placedOrder.customerName || customer?.customerName}</strong>!
+              Your order for <strong>Table {tableNumber}</strong> has been received by the kitchen. Thank you, <strong>{placedOrder.customerName || customer?.customerName}</strong>!
             </div>
             {placedOrder.remarks && (
               <div className="success-remarks-note">
@@ -676,6 +789,139 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Current Session Orders & Live Status */}
+      {isOrdersModalOpen && (
+        <div className="modal-backdrop">
+          <div className="modal-card session-orders-modal">
+            <div className="modal-header">
+              <div>
+                <h2>Current Session Orders</h2>
+                <span className="guest-order-subtitle">
+                  Orders placed for <strong>Table {tableNumber || '1'}</strong> by <strong>{customer?.customerName || 'You'}</strong>
+                </span>
+              </div>
+              <div className="modal-header-actions">
+                <button
+                  type="button"
+                  className="btn-icon-refresh"
+                  onClick={() => fetchLiveSessionOrders(true)}
+                  disabled={refreshingOrders}
+                  title="Refresh order statuses"
+                >
+                  <RefreshCw size={15} className={refreshingOrders ? 'spinner' : ''} />
+                </button>
+                <button
+                  type="button"
+                  className="modal-close-btn"
+                  onClick={() => setIsOrdersModalOpen(false)}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {sessionOrders.length === 0 ? (
+              <div className="orders-empty-state">
+                <CookingPot size={40} opacity={0.35} />
+                <h3>No Orders Placed Yet</h3>
+                <p>Browse the menu, add your favorite dishes, and submit your order to see real-time updates here.</p>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setIsOrdersModalOpen(false)}
+                  style={{ marginTop: '12px' }}
+                >
+                  Browse Menu
+                </button>
+              </div>
+            ) : (
+              <div className="session-orders-list">
+                {sessionOrders.map((order, oIdx) => {
+                  const stepIdx = getStepIndex(order.status);
+
+                  return (
+                    <div key={order._id || oIdx} className="session-order-card">
+                      <div className="session-order-top">
+                        <div>
+                          <span className="order-ticket-tag">
+                            Order #{order._id ? order._id.slice(-5).toUpperCase() : oIdx + 1}
+                          </span>
+                          <span className="order-placed-time">
+                            <Clock size={11} />
+                            <span>
+                              {order.createdAt
+                                ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                : 'Just now'}
+                            </span>
+                          </span>
+                        </div>
+
+                        <div className={`order-live-status-pill status-${order.status.toLowerCase()}`}>
+                          {order.status === 'Preparing' && <CookingPot size={13} className="pill-icon" />}
+                          {order.status === 'Ready' && <Sparkles size={13} className="pill-icon" />}
+                          {order.status === 'Served' && <CheckCircle2 size={13} className="pill-icon" />}
+                          <span>{order.status}</span>
+                        </div>
+                      </div>
+
+                      {/* Mini Stepper for each order */}
+                      <div className="order-card-mini-stepper">
+                        {ORDER_STEPS.map((s, sIdx) => (
+                          <div
+                            key={s.key}
+                            className={`mini-step ${sIdx <= stepIdx ? 'active' : ''}`}
+                            title={s.label}
+                          >
+                            <span className="mini-step-bar" />
+                            <span className="mini-step-text">{s.label}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Items List */}
+                      <div className="session-order-items">
+                        {order.items?.map((it, iIdx) => (
+                          <div key={iIdx} className="session-order-item-row">
+                            <span className="item-qty">{it.quantity}x</span>
+                            <span className="item-name">{it.name}</span>
+                            <span className="item-price">
+                              ${(Number(it.price) * Number(it.quantity)).toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Notes / Remarks */}
+                      {order.notes && (
+                        <div className="session-order-remarks">
+                          <strong>Remarks:</strong> {order.notes}
+                        </div>
+                      )}
+
+                      {/* Order Footer */}
+                      <div className="session-order-footer">
+                        <span>Total:</span>
+                        <strong>${Number(order.totalAmount || 0).toFixed(2)}</strong>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="modal-actions" style={{ marginTop: '16px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-block"
+                onClick={() => setIsOrdersModalOpen(false)}
+              >
+                Back to Menu
+              </button>
+            </div>
           </div>
         </div>
       )}

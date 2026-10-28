@@ -2033,4 +2033,840 @@ body {
   flex-wrap: wrap;
 }
 
+/* ==========================================================================
+   CUSTOMER MY ORDERS & LIVE STATUS TRACKER
+   ========================================================================== */
+.guest-my-orders-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #ffffff;
+  color: var(--primary);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.guest-my-orders-btn:hover {
+  background: var(--bg-muted);
+  border-color: #cbd5e1;
+}
+
+.guest-my-orders-btn.has-orders {
+  border-color: #94a3b8;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.orders-count-badge {
+  background: var(--primary);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  min-width: 18px;
+  text-align: center;
+}
+
+/* Top Live Active Status Tracker Banner */
+.guest-live-status-card {
+  margin: 12px 18px 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  box-shadow: 0 4px 15px -2px rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.guest-live-status-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 20px -2px rgba(15, 23, 42, 0.1);
+}
+
+.live-status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.live-status-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.live-pulse-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #15803d;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(21, 128, 61, 0.7);
+  animation: pulseGreen 1.8s infinite;
+}
+
+@keyframes pulseGreen {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(21, 128, 61, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 7px rgba(21, 128, 61, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(21, 128, 61, 0);
+  }
+}
+
+.live-status-title {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.live-status-order-id {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.live-status-view-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  color: #0284c7;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Stepper Progress Bar */
+.live-status-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  margin: 10px 0 12px;
+}
+
+.live-status-stepper::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: 15px;
+  right: 15px;
+  height: 2px;
+  background: #e2e8f0;
+  z-index: 1;
+}
+
+.stepper-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  z-index: 2;
+  gap: 4px;
+  flex: 1;
+}
+
+.step-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.74rem;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.step-label {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 600;
+  text-align: center;
+}
+
+.stepper-step.completed .step-circle {
+  background: #15803d;
+  border-color: #15803d;
+  color: #ffffff;
+}
+
+.stepper-step.completed .step-label {
+  color: #15803d;
+}
+
+.stepper-step.active .step-circle {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
+
+.stepper-step.active .step-label {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.live-status-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.74rem;
+  color: #64748b;
+  background: var(--bg-muted);
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+}
+
+/* Session Orders Modal */
+.session-orders-modal {
+  max-width: 520px;
+  padding: 24px;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-icon-refresh {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: var(--text-primary);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-icon-refresh:hover {
+  background: #e2e8f0;
+}
+
+.orders-empty-state {
+  text-align: center;
+  padding: 32px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.orders-empty-state h3 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.orders-empty-state p {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  max-width: 320px;
+}
+
+.session-orders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 380px;
+  overflow-y: auto;
+  margin-top: 14px;
+  padding-right: 2px;
+}
+
+.session-order-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.session-order-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.order-ticket-tag {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: block;
+}
+
+.order-placed-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.74rem;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.order-live-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.order-live-status-pill .pill-icon {
+  margin-right: 2px;
+}
+
+.order-card-mini-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 10px;
+}
+
+.mini-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mini-step-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: #e2e8f0;
+  transition: background 0.2s ease;
+}
+
+.mini-step.active .mini-step-bar {
+  background: #0f172a;
+}
+
+.mini-step-text {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.mini-step.active .mini-step-text {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.session-order-items {
+  background: #f8fafc;
+  border-radius: var(--radius-xs);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.session-order-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.82rem;
+}
+
+.session-order-item-row .item-qty {
+  font-weight: 700;
+  color: var(--primary);
+  min-width: 24px;
+}
+
+.session-order-item-row .item-name {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.session-order-item-row .item-price {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.session-order-remarks {
+  background: #fffbeb;
+  border: 1px solid #fef3c7;
+  color: #92400e;
+  font-size: 0.78rem;
+  padding: 6px 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.session-order-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.86rem;
+  padding-top: 6px;
+  border-top: 1px dashed #e2e8f0;
+  color: var(--text-secondary);
+}
+
+.session-order-footer strong {
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+/* ==========================================================================
+   READY STATUS & LIVE ORDERS SEARCH / RECEIPT STYLES
+   ========================================================================== */
+.btn-purple {
+  background: #7c3aed;
+  color: #ffffff;
+  border: 1px solid #6d28d9;
+}
+
+.btn-purple:hover {
+  background: #6d28d9;
+  color: #ffffff;
+}
+
+.status-ready {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+.order-live-status-pill.status-ready {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+.live-pulse-dot.status-ready {
+  background-color: #7c3aed;
+  box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.7);
+  animation: pulsePurple 1.8s infinite;
+}
+
+.live-pulse-dot.status-preparing {
+  background-color: #2563eb;
+  box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+  animation: pulseBlue 1.8s infinite;
+}
+
+.live-pulse-dot.status-received {
+  background-color: #d97706;
+  box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.7);
+  animation: pulseAmber 1.8s infinite;
+}
+
+.live-pulse-dot.status-served {
+  background-color: #15803d;
+  box-shadow: 0 0 0 0 rgba(21, 128, 61, 0.7);
+  animation: pulseGreen 1.8s infinite;
+}
+
+@keyframes pulsePurple {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 7px rgba(124, 58, 237, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
+}
+
+@keyframes pulseBlue {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 7px rgba(37, 99, 235, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+
+@keyframes pulseAmber {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 7px rgba(217, 119, 6, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(217, 119, 6, 0); }
+}
+
+/* Orders Filter & Search Bar */
+.orders-filters-bar {
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.orders-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.orders-search-input-wrap .search-icon {
+  position: absolute;
+  left: 12px;
+  color: #94a3b8;
+}
+
+.orders-search-input {
+  width: 100%;
+  padding: 9px 36px 9px 36px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.orders-search-input:focus {
+  outline: none;
+  border-color: #0f172a;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.search-clear-btn:hover {
+  color: var(--text-primary);
+}
+
+.orders-filter-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.orders-date-toggle {
+  display: inline-flex;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.orders-date-toggle .toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.orders-date-toggle .toggle-btn.active {
+  background: #ffffff;
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.orders-status-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.status-filter-pill {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.status-filter-pill:hover {
+  background: var(--bg-muted);
+  color: var(--text-primary);
+}
+
+.status-filter-pill.active {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+}
+
+.order-date-text {
+  color: #94a3b8;
+  font-size: 0.74rem;
+}
+
+.order-card-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-print-receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: #cbd5e1;
+}
+
+.btn-print-receipt:hover {
+  border-color: #94a3b8;
+  background: #f1f5f9;
+}
+
+/* ==========================================================================
+   PRINTABLE THERMAL RECEIPT MODAL
+   ========================================================================== */
+.receipt-modal-backdrop {
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.receipt-modal-card {
+  max-width: 440px;
+  padding: 24px;
+  background: #ffffff;
+  border-radius: var(--radius-md);
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.receipt-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.receipt-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.receipt-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.receipt-paper {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 20px 18px;
+  font-family: 'Courier New', Courier, monospace;
+  color: #1e293b;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.02);
+}
+
+.receipt-header {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.receipt-resto-name {
+  font-size: 1.25rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #0f172a;
+}
+
+.receipt-subtitle {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-top: 3px;
+}
+
+.receipt-divider-dashed {
+  border-top: 1px dashed #94a3b8;
+  margin: 10px 0;
+}
+
+.receipt-divider-solid {
+  border-top: 1px solid #1e293b;
+  margin: 6px 0;
+}
+
+.receipt-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+
+.receipt-meta-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.receipt-status-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.receipt-items-table {
+  font-size: 0.8rem;
+  margin: 8px 0;
+}
+
+.receipt-item-header {
+  display: flex;
+  font-weight: 700;
+  padding-bottom: 4px;
+  color: #0f172a;
+}
+
+.receipt-item-line {
+  display: flex;
+  padding: 3px 0;
+}
+
+.col-qty {
+  width: 36px;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.col-item {
+  flex: 1;
+}
+
+.col-price {
+  width: 60px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.col-total {
+  width: 65px;
+  text-align: right;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.receipt-totals {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+}
+
+.receipt-total-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.receipt-total-row.grand-total {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #0f172a;
+  padding-top: 4px;
+}
+
+.receipt-notes {
+  font-size: 0.76rem;
+  background: #fffbeb;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: #92400e;
+}
+
+.receipt-footer {
+  text-align: center;
+  font-size: 0.76rem;
+  color: #64748b;
+  margin-top: 8px;
+}
+
+.receipt-footer-sub {
+  font-size: 0.7rem;
+  margin-top: 2px;
+}
+
+/* Print CSS */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .receipt-modal-backdrop,
+  .receipt-paper,
+  .receipt-paper * {
+    visibility: visible !important;
+  }
+  .receipt-modal-backdrop {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+  .receipt-modal-card {
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+    max-width: 340px !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
 

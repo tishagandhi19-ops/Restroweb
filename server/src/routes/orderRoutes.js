@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   createPublicOrder,
+  getSessionOrders,
   getRestaurantOrders,
   updateOrderStatus,
 } from '../controllers/orderController.js';
@@ -8,8 +9,9 @@ import { protectAdmin } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Public route for diners seated at tables scanning QR code
+// Public routes for diners seated at tables scanning QR code
 router.post('/public', createPublicOrder);
+router.post('/public/session-orders', getSessionOrders);
 
 // Protected routes for restaurant admin
 router.use(protectAdmin);
