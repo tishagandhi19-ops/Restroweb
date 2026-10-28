@@ -5,10 +5,14 @@ import {
   createBulkTables,
   updateTable,
   deleteTable,
+  verifyPublicTable,
 } from '../controllers/tableController.js';
 import { protectAdmin } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
+
+// Public route for QR scan verification
+router.get('/public/verify', verifyPublicTable);
 
 router.use(protectAdmin);
 

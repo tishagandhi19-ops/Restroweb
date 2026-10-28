@@ -6,7 +6,7 @@ import Admin from '../models/Admin.js';
 // @access  Public (Guest at table)
 export const createPublicOrder = async (req, res) => {
   try {
-    const { restaurantId, tableNumber, items, totalAmount, notes } = req.body;
+    const { restaurantId, tableNumber, items, totalAmount, notes, customerName, customerPhone } = req.body;
 
     if (!restaurantId || !tableNumber || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
@@ -26,6 +26,8 @@ export const createPublicOrder = async (req, res) => {
     const order = await Order.create({
       admin: restaurantId,
       tableNumber: String(tableNumber).trim(),
+      customerName: customerName ? String(customerName).trim() : 'Guest',
+      customerPhone: customerPhone ? String(customerPhone).trim() : '',
       items,
       totalAmount: Number(totalAmount) || 0,
       notes: notes ? notes.trim() : '',

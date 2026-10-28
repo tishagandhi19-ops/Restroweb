@@ -1,4 +1,5 @@
 import Table from '../models/Table.js';
+import Admin from '../models/Admin.js';
 
 // @desc    Get all tables for logged-in admin
 // @route   GET /api/tables
@@ -194,6 +195,70 @@ export const deleteTable = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to delete table.',
+    });
+  }
+};
+
+// @desc    Verify if a table QR code is valid for a restaurant
+// @route   GET /api/tables/public/verify
+// @access  Public (Guest scanner)
+export const verifyPublicTable = async (req, res) => {
+  try {
+    const { restaurantId, tableNumber } = req.query;
+
+    if (!restaurantId || !tableNumber) {
+      return res.status(400).json({
+        success: false,
+        valid: false,
+        message: 'Missing restaurant ID or table number.',
+      });
+    }
+
+    const admin = await Admin.findById(restaurantId).select('name restaurantName email');
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        valid: false,
+        message: 'Restaurant not found or QR code is invalid.',
+      });
+    }
+
+    const tableNumTrimmed = String(tableNumber).trim();
+    // Search by exact tableNumber or tableNumber with prefix (e.g. "8" or "Table 8")
+    const tableRegex = new RegExp(`^(Table\\s*)?${tableNumTrimmed.replace(/^Table\s*/i, '')}$`, 'i');
+    const table = await Table.findOne({
+      admin: restaurantId,
+      tableNumber: { $regex: tableRegex },
+    });
+
+    if (!table) {
+      return res.status(404).json({
+        success: false,
+        valid: false,
+        message: `Table "${tableNumTrimmed}" is not recognized for ${admin.restaurantName || 'this restaurant'}. Please ask staff for assistance.`,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      valid: true,
+      table: {
+        _id: table._id,
+        tableNumber: table.tableNumber,
+        capacity: table.capacity,
+        status: table.status,
+      },
+      restaurant: {
+        id: admin._id,
+        name: admin.restaurantName || admin.name,
+      },
+    });
+  } catch (error) {
+    console.error('verifyPublicTable error:', error);
+    return res.status(500).json({
+      success: false,
+      valid: false,
+      message: error.message || 'Failed to verify table QR code.',
     });
   }
 };

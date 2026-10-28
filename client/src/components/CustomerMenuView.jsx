@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   UtensilsCrossed,
   Search,
@@ -13,18 +13,39 @@ import {
   CheckCircle2,
   X,
   ChefHat,
-  Sparkles,
+  User,
+  Phone,
+  Clock,
+  Edit3,
+  Check,
+  RefreshCw,
 } from 'lucide-react';
 import { getPublicMenuApi } from '../api/menu';
 import { placeTableOrderApi } from '../api/orders';
+import { verifyPublicTableApi } from '../api/tables';
+
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+function getSessionKey(restaurantId, tableNumber) {
+  return `restoweb_customer_${restaurantId}_table_${String(tableNumber || '1').trim().toLowerCase()}`;
+}
 
 export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAdmin }) {
   const [loading, setLoading] = useState(true);
+  const [tableData, setTableData] = useState(null);
   const [error, setError] = useState('');
   const [restaurant, setRestaurant] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Customer Session State (1-Hour Expiry)
+  const [customer, setCustomer] = useState(null);
+  const [sessionTimeLeft, setSessionTimeLeft] = useState(60);
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [customerForm, setCustomerForm] = useState({ name: '', phone: '' });
+  const [formError, setFormError] = useState('');
+  const [sessionResumedNotice, setSessionResumedNotice] = useState(false);
 
   // Cart / Table Order state: { [itemId]: quantity }
   const [cart, setCart] = useState({});
@@ -36,14 +57,112 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
   // Call waiter toast notification
   const [callWaiterNotice, setCallWaiterNotice] = useState(false);
 
+  // Quick remarks suggestion chips
+  const quickRemarks = [
+    '🌶️ Make it spicy',
+    '🌱 Less spicy / mild',
+    '🧅 No onions',
+    '🧂 Less salt',
+    '🍽️ Extra cutlery & napkins',
+    '🧊 Less ice in drinks',
+  ];
+
+  // Helper to load session from localStorage if within 1 hour
+  const checkStoredSession = useCallback(() => {
+    if (!restaurantId || !tableNumber) return null;
+    const key = getSessionKey(restaurantId, tableNumber);
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+
+    try {
+      const data = JSON.parse(raw);
+      const elapsed = Date.now() - (data.createdAt || 0);
+      if (elapsed < ONE_HOUR_MS) {
+        const remainingMins = Math.max(1, Math.ceil((ONE_HOUR_MS - elapsed) / 60000));
+        setSessionTimeLeft(remainingMins);
+        return data;
+      } else {
+        // Expired after 1 hour
+        localStorage.removeItem(key);
+        return null;
+      }
+    } catch {
+      localStorage.removeItem(key);
+      return null;
+    }
+  }, [restaurantId, tableNumber]);
+
+  // Periodic check to update remaining session time & detect expiry
   useEffect(() => {
-    async function loadMenu() {
+    if (!customer) return;
+
+    const interval = setInterval(() => {
+      const validSession = checkStoredSession();
+      if (validSession) {
+        const elapsed = Date.now() - validSession.createdAt;
+        const remainingMins = Math.max(1, Math.ceil((ONE_HOUR_MS - elapsed) / 60000));
+        setSessionTimeLeft(remainingMins);
+      } else {
+        // Session expired while browsing
+        setCustomer(null);
+        setIsCustomerModalOpen(true);
+        setFormError('Your previous 1-hour dining session has expired. Please confirm your details to continue.');
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [customer, checkStoredSession]);
+
+  // Initial load: Validate Table QR & Load Menu
+  useEffect(() => {
+    async function initTableAndMenu() {
+      if (!restaurantId) {
+        setError('Invalid dining link. Missing restaurant identifier.');
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
         setError('');
-        const res = await getPublicMenuApi(restaurantId);
-        setRestaurant(res.restaurant);
-        setMenuItems(res.data || []);
+
+        // Step 1: Verify Table QR validity
+        try {
+          const verifyRes = await verifyPublicTableApi(restaurantId, tableNumber || '1');
+          if (verifyRes.valid) {
+            setTableData(verifyRes.table);
+          }
+        } catch (tableErr) {
+          setError(
+            tableErr.message ||
+              `Table ${tableNumber || '1'} could not be verified. Please ensure you scanned the correct QR code on your table.`
+          );
+          setLoading(false);
+          return;
+        }
+
+        // Step 2: Fetch Public Menu
+        const menuRes = await getPublicMenuApi(restaurantId);
+        setRestaurant(menuRes.restaurant);
+        setMenuItems(menuRes.data || []);
+
+        // Step 3: Check 1-Hour Customer Session in localStorage
+        const existingSession = checkStoredSession();
+        if (existingSession) {
+          // Session active within 1 hour! Auto-resume without prompting for name/phone
+          setCustomer(existingSession);
+          setCustomerForm({
+            name: existingSession.customerName || '',
+            phone: existingSession.customerPhone || '',
+          });
+          setIsCustomerModalOpen(false);
+          setSessionResumedNotice(true);
+          setTimeout(() => setSessionResumedNotice(false), 5000);
+        } else {
+          // No active session or expired > 1 hr: prompt customer for name & phone
+          setCustomer(null);
+          setIsCustomerModalOpen(true);
+        }
       } catch (err) {
         setError(err.message || 'Unable to load menu. Please ask your server.');
       } finally {
@@ -51,16 +170,50 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
       }
     }
 
-    if (restaurantId) {
-      loadMenu();
-    } else {
-      setError('Invalid dining link. Missing restaurant identifier.');
-      setLoading(false);
+    initTableAndMenu();
+  }, [restaurantId, tableNumber, checkStoredSession]);
+
+  // Handle Customer Form Submit (Name & Mobile)
+  const handleCustomerSubmit = (e) => {
+    e.preventDefault();
+    const { name, phone } = customerForm;
+
+    if (!name.trim() || name.trim().length < 2) {
+      setFormError('Please enter your full name (at least 2 characters).');
+      return;
     }
-  }, [restaurantId]);
+
+    const cleanPhone = phone.trim().replace(/[\s\-()]/g, '');
+    if (!cleanPhone || cleanPhone.length < 7) {
+      setFormError('Please enter a valid mobile number (at least 7 digits).');
+      return;
+    }
+
+    const sessionPayload = {
+      customerName: name.trim(),
+      customerPhone: phone.trim(),
+      restaurantId,
+      tableNumber: tableNumber || '1',
+      createdAt: Date.now(),
+      lastActiveAt: Date.now(),
+    };
+
+    const key = getSessionKey(restaurantId, tableNumber);
+    localStorage.setItem(key, JSON.stringify(sessionPayload));
+
+    setCustomer(sessionPayload);
+    setSessionTimeLeft(60);
+    setFormError('');
+    setIsCustomerModalOpen(false);
+  };
 
   // Cart operations
   const handleAddToCart = (itemId) => {
+    // If no active session, ask customer to enter name/phone first
+    if (!customer) {
+      setIsCustomerModalOpen(true);
+      return;
+    }
     setCart((prev) => ({
       ...prev,
       [itemId]: (prev[itemId] || 0) + 1,
@@ -90,15 +243,41 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
   const totalItemCount = cartItemsList.reduce((acc, curr) => acc + curr.quantity, 0);
   const totalAmount = cartItemsList.reduce((acc, curr) => acc + curr.price * curr.quantity, 0);
 
+  // Quick chip click handler for remarks
+  const handleAppendRemark = (chipText) => {
+    const cleanChip = chipText.replace(/^[^\w\s]+/, '').trim();
+    if (!kitchenNotes.trim()) {
+      setKitchenNotes(cleanChip);
+    } else if (!kitchenNotes.toLowerCase().includes(cleanChip.toLowerCase())) {
+      setKitchenNotes((prev) => `${prev.trim()}, ${cleanChip}`);
+    }
+  };
+
   // Place order for table
   const handlePlaceOrder = async () => {
     if (cartItemsList.length === 0) return;
+
+    // Check customer session validity before placing order
+    let activeCustomer = customer;
+    if (!activeCustomer) {
+      const stored = checkStoredSession();
+      if (stored) {
+        activeCustomer = stored;
+        setCustomer(stored);
+      } else {
+        setIsCustomerModalOpen(true);
+        setFormError('Please enter your name and phone number before placing the order.');
+        return;
+      }
+    }
 
     try {
       setPlacingOrder(true);
       const orderPayload = {
         restaurantId,
-        tableNumber: tableNumber || '1',
+        tableNumber: String(tableNumber || '1').trim(),
+        customerName: activeCustomer.customerName,
+        customerPhone: activeCustomer.customerPhone,
         items: cartItemsList.map((item) => ({
           menuItem: item._id,
           name: item.name,
@@ -107,11 +286,22 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
           category: item.category,
         })),
         totalAmount,
-        notes: kitchenNotes,
+        notes: kitchenNotes.trim(),
       };
 
       const result = await placeTableOrderApi(orderPayload);
-      setPlacedOrder(result);
+
+      // Update session lastActiveAt in localStorage
+      const key = getSessionKey(restaurantId, tableNumber);
+      const updatedSession = { ...activeCustomer, lastActiveAt: Date.now() };
+      localStorage.setItem(key, JSON.stringify(updatedSession));
+      setCustomer(updatedSession);
+
+      setPlacedOrder({
+        ...result,
+        customerName: activeCustomer.customerName,
+        remarks: kitchenNotes.trim(),
+      });
       setCart({});
       setKitchenNotes('');
       setIsOrderSheetOpen(false);
@@ -125,7 +315,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
   // Call waiter handler
   const handleCallWaiter = () => {
     setCallWaiterNotice(true);
-    setTimeout(() => setCallWaiterNotice(false), 4000);
+    setTimeout(() => setCallWaiterNotice(false), 4500);
   };
 
   const categories = ['All', ...new Set(menuItems.map((item) => item.category).filter(Boolean))];
@@ -143,7 +333,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
       <div className="guest-view-container">
         <div className="guest-loading-box">
           <Loader2 size={36} className="spinner" />
-          <h2>Loading Digital Menu</h2>
+          <h2>Verifying Table QR</h2>
           <p>Connecting to {tableNumber ? `Table ${tableNumber}` : 'your table'}...</p>
         </div>
       </div>
@@ -154,19 +344,29 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
     return (
       <div className="guest-view-container">
         <div className="guest-error-box">
-          <AlertCircle size={40} color="#dc2626" />
-          <h2>Menu Unavailable</h2>
+          <AlertCircle size={44} color="#dc2626" />
+          <h2>Invalid Table QR Code</h2>
           <p>{error}</p>
-          {onBackToAdmin && (
+          <div className="guest-error-actions">
             <button
               type="button"
-              className="btn btn-secondary"
-              onClick={onBackToAdmin}
-              style={{ marginTop: '16px' }}
+              className="btn btn-primary"
+              onClick={() => window.location.reload()}
             >
-              <ArrowLeft size={16} /> Return to Admin
+              <RefreshCw size={15} />
+              <span>Retry Verification</span>
             </button>
-          )}
+            {onBackToAdmin && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={onBackToAdmin}
+              >
+                <ArrowLeft size={15} />
+                <span>Return to Admin</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -183,9 +383,25 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
             </div>
             <div>
               <h1 className="guest-resto-name">{restaurant?.name || 'Restaurant'}</h1>
-              <div className="guest-table-badge">
-                <MapPin size={12} />
-                <span>Table {tableNumber || '1'}</span>
+              <div className="guest-badges-row">
+                <span className="guest-table-badge">
+                  <MapPin size={12} />
+                  <span>Table {tableNumber || '1'}{tableData?.capacity ? ` • ${tableData.capacity} Seats` : ''}</span>
+                </span>
+                {customer && (
+                  <span
+                    className="guest-session-badge"
+                    onClick={() => setIsCustomerModalOpen(true)}
+                    title="Click to edit your details"
+                  >
+                    <User size={12} />
+                    <span className="session-name">{customer.customerName}</span>
+                    <span className="session-timer">
+                      <Clock size={10} /> {sessionTimeLeft}m
+                    </span>
+                    <Edit3 size={11} className="edit-icon" />
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -216,6 +432,24 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
         </div>
       </header>
 
+      {/* 1-Hour Session Resumed Alert Banner */}
+      {sessionResumedNotice && customer && (
+        <div className="guest-session-toast">
+          <CheckCircle2 size={18} color="#15803d" />
+          <div className="toast-text">
+            <strong>Welcome back, {customer.customerName}!</strong>
+            <span> Dining session resumed for <strong>Table {tableNumber}</strong> ({sessionTimeLeft} mins remaining). Place additional orders anytime!</span>
+          </div>
+          <button
+            type="button"
+            className="toast-close"
+            onClick={() => setSessionResumedNotice(false)}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
       {/* Call Waiter Toast */}
       {callWaiterNotice && (
         <div className="guest-toast-notice">
@@ -228,13 +462,21 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
       {placedOrder && (
         <div className="guest-order-success-card">
           <div className="success-icon-wrap">
-            <CheckCircle2 size={24} color="#15803d" />
+            <CheckCircle2 size={26} color="#15803d" />
           </div>
-          <div>
+          <div className="success-content">
             <div className="success-title">Order Sent to Kitchen!</div>
             <div className="success-desc">
-              Your order for <strong>Table {tableNumber}</strong> has been received by the kitchen.
-              Sit back and enjoy your dining experience!
+              Your order for <strong>Table {tableNumber}</strong> has been received. Thank you, <strong>{placedOrder.customerName || customer?.customerName}</strong>!
+            </div>
+            {placedOrder.remarks && (
+              <div className="success-remarks-note">
+                <strong>Special Remarks:</strong> "{placedOrder.remarks}"
+              </div>
+            )}
+            <div className="success-session-hint">
+              <Clock size={12} />
+              <span>Session active for {sessionTimeLeft} mins. Want more items? Browse the menu below and send another order!</span>
             </div>
           </div>
           <button
@@ -247,10 +489,10 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
         </div>
       )}
 
-      {/* Welcome Banner */}
+      {/* Sub Bar Welcome */}
       <div className="guest-sub-bar">
         <span>
-          🍽️ Welcome! Browse the digital menu below to select dishes for <strong>Table {tableNumber || '1'}</strong>.
+          🍽️ Welcome {customer ? <strong>{customer.customerName}</strong> : 'Guest'}! Browse the contactless menu for <strong>Table {tableNumber || '1'}</strong>.
         </span>
       </div>
 
@@ -339,7 +581,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
         </div>
       </main>
 
-      {/* Floating Bottom Cart Bar (appears when guest has selected items) */}
+      {/* Floating Bottom Cart Bar */}
       {totalItemCount > 0 && (
         <div className="guest-floating-cart-bar">
           <div className="cart-bar-left">
@@ -361,14 +603,107 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
         </div>
       )}
 
-      {/* Modal / Sheet: Table Order Review */}
+      {/* Customer Onboarding / Details Modal */}
+      {isCustomerModalOpen && (
+        <div className="modal-backdrop customer-modal-backdrop">
+          <div className="modal-card customer-onboarding-modal">
+            <div className="customer-modal-header">
+              <div className="modal-icon-badge">
+                <UtensilsCrossed size={22} />
+              </div>
+              <div>
+                <h2>{customer ? 'Update Your Details' : `Welcome to Table ${tableNumber || '1'}!`}</h2>
+                <p className="customer-modal-desc">
+                  Please provide your name & mobile number once. Your session stays active for{' '}
+                  <strong>1 hour</strong>, so you can order additional items anytime without entering details again.
+                </p>
+              </div>
+              {customer && (
+                <button
+                  type="button"
+                  className="modal-close-btn"
+                  onClick={() => setIsCustomerModalOpen(false)}
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
+
+            {formError && (
+              <div className="modal-error-notice">
+                <AlertCircle size={15} />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCustomerSubmit} className="customer-form">
+              <div className="form-group">
+                <label className="form-label">
+                  <User size={14} /> Your Full Name *
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. Rahul Sharma"
+                  value={customerForm.name}
+                  onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">
+                  <Phone size={14} /> Mobile Number *
+                </label>
+                <input
+                  type="tel"
+                  className="form-input"
+                  placeholder="e.g. 9876543210"
+                  value={customerForm.phone}
+                  onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
+                  required
+                />
+                <span className="form-help-text">
+                  Used by the restaurant team to identify your order tickets and updates.
+                </span>
+              </div>
+
+              <div className="customer-modal-footer">
+                <button type="submit" className="btn btn-primary btn-block">
+                  <Check size={16} />
+                  <span>{customer ? 'Save & Return to Menu' : 'Start Dining & View Menu'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal / Sheet: Table Order Review with Customer Remarks */}
       {isOrderSheetOpen && (
         <div className="modal-backdrop">
           <div className="modal-card guest-order-modal">
             <div className="modal-header">
               <div>
                 <h2>Table {tableNumber || '1'} Order Summary</h2>
-                <span className="guest-order-subtitle">Review items before sending to the kitchen</span>
+                <div className="guest-order-customer-line">
+                  <User size={13} />
+                  <span>
+                    <strong>{customer?.customerName || 'Guest'}</strong>
+                    {customer?.customerPhone && ` • ${customer.customerPhone}`}
+                  </span>
+                  <button
+                    type="button"
+                    className="customer-edit-link"
+                    onClick={() => {
+                      setIsOrderSheetOpen(false);
+                      setIsCustomerModalOpen(true);
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
               </div>
               <button
                 type="button"
@@ -414,21 +749,43 @@ export default function CustomerMenuView({ restaurantId, tableNumber, onBackToAd
               ))}
             </div>
 
-            <div className="form-group" style={{ marginTop: '14px' }}>
-              <label className="form-label">Special Requests / Notes for Chef</label>
+            {/* Customer Remarks / Chef Special Instructions */}
+            <div className="form-group remarks-form-group">
+              <label className="form-label remarks-label">
+                <ChefHat size={15} />
+                <span>Special Remarks & Instructions for Chef</span>
+              </label>
               <textarea
-                className="form-input form-textarea"
-                placeholder="e.g. Extra napkins, dressing on the side, allergies..."
+                className="form-input form-textarea remarks-textarea"
+                placeholder="e.g. Make it spicy, less salt, extra napkins, no onions in pasta..."
                 value={kitchenNotes}
                 onChange={(e) => setKitchenNotes(e.target.value)}
                 rows={2}
               />
+
+              {/* Quick Suggestion Chips */}
+              <div className="remarks-chips-row">
+                {quickRemarks.map((chip, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className="remark-chip-btn"
+                    onClick={() => handleAppendRemark(chip)}
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="cart-totals-summary">
               <div className="summary-row">
                 <span>Table</span>
                 <strong>Table {tableNumber || '1'}</strong>
+              </div>
+              <div className="summary-row">
+                <span>Diner</span>
+                <span>{customer?.customerName || 'Guest'}</span>
               </div>
               <div className="summary-row total">
                 <span>Total Amount</span>

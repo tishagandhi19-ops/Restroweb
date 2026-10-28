@@ -64,3 +64,19 @@ export async function deleteTableApi(token, id) {
   if (!response.ok) throw new Error(data.message || 'Failed to delete table');
   return data;
 }
+
+/**
+ * Public: Validate table QR code for customer scanner
+ */
+export async function verifyPublicTableApi(restaurantId, tableNumber) {
+  const params = new URLSearchParams({
+    restaurantId,
+    tableNumber,
+  });
+  const response = await fetch(`${getApiBaseUrl()}/tables/public/verify?${params.toString()}`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Invalid table QR code');
+  }
+  return data;
+}

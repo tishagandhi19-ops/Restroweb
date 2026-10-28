@@ -20,7 +20,7 @@ import {
 import AdminDashboard from './AdminDashboard';
 import CustomerMenuView from './CustomerMenuView';
 
-export default function AdminAuth() {
+export default function AdminAuth({ onPreviewGuest: externalPreviewGuest } = {}) {
   const [mode, setMode] = useState('login'); // 'login' | 'register'
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -194,10 +194,16 @@ export default function AdminAuth() {
         admin={currentAdmin}
         onLogout={handleLogout}
         onPreviewGuest={(tableNumber) => {
-          setGuestView({
-            restaurantId: currentAdmin._id,
-            tableNumber,
-          });
+          const newUrl = `${window.location.pathname}?restaurantId=${currentAdmin._id}&table=${encodeURIComponent(tableNumber)}`;
+          window.history.pushState({}, '', newUrl);
+          if (externalPreviewGuest) {
+            externalPreviewGuest(currentAdmin._id, tableNumber);
+          } else {
+            setGuestView({
+              restaurantId: currentAdmin._id,
+              tableNumber,
+            });
+          }
         }}
       />
     );

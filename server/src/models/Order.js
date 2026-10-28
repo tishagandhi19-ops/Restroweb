@@ -37,6 +37,16 @@ const orderSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    customerName: {
+      type: String,
+      default: 'Guest',
+      trim: true,
+    },
+    customerPhone: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     items: [orderItemSchema],
     totalAmount: {
       type: Number,

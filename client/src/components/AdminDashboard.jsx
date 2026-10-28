@@ -15,6 +15,8 @@ import {
   CheckCircle2,
   Search,
   Users,
+  User,
+  Phone,
   Eye,
   Loader2,
   Sparkles,
@@ -726,6 +728,20 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
                       </div>
                     </div>
 
+                    {/* Customer Contact Details */}
+                    <div className="order-customer-banner">
+                      <div className="order-customer-field">
+                        <User size={13} className="field-icon" />
+                        <span className="customer-name">{order.customerName || 'Guest Diner'}</span>
+                      </div>
+                      {order.customerPhone && (
+                        <div className="order-customer-field">
+                          <Phone size={12} className="field-icon" />
+                          <span className="customer-phone">{order.customerPhone}</span>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="order-items-list">
                       {order.items.map((item, idx) => (
                         <div key={idx} className="order-item-line">
@@ -738,7 +754,7 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
 
                     {order.notes && (
                       <div className="order-notes-box">
-                        <strong>Guest Note:</strong> {order.notes}
+                        <strong>Customer Remarks:</strong> {order.notes}
                       </div>
                     )}
 
