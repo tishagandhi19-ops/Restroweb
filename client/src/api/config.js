@@ -5,7 +5,7 @@
  */
 export const getApiBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
-    return `http://${window.location.hostname}:5000/api`;
+    return `https://restroweb-aox0.onrender.com/api`;
   }
-  return 'http://localhost:5000/api';
+  return 'https://restroweb-aox0.onrender.com/api';
 };
