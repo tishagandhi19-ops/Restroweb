@@ -1,5 +1,6 @@
 import Order from '../models/Order.js';
 import Admin from '../models/Admin.js';
+import { getIO } from '../socket.js';
 
 // @desc    Guest places order for a specific table after scanning QR code
 // @route   POST /api/orders/public
@@ -33,6 +34,19 @@ export const createPublicOrder = async (req, res) => {
       notes: notes ? notes.trim() : '',
       status: 'Received',
     });
+
+    // Real-time notification via Socket.io
+    try {
+      const io = getIO();
+      if (io) {
+        // Emit to Restaurant Admin Dashboard
+        io.to(`restaurant:${restaurantId}`).emit('newOrder', order);
+        // Emit to Customers seated at this table
+        io.to(`table:${restaurantId}:${String(tableNumber).trim()}`).emit('newOrder', order);
+      }
+    } catch (socketErr) {
+      console.warn('⚠️ Socket emission error on createPublicOrder:', socketErr.message);
+    }
 
     return res.status(201).json({
       success: true,
@@ -87,6 +101,19 @@ export const updateOrderStatus = async (req, res) => {
     if (status) {
       order.status = status;
       await order.save();
+
+      // Real-time status update notification via Socket.io
+      try {
+        const io = getIO();
+        if (io) {
+          // Emit to Restaurant Admin Dashboard (multi-tab/device sync)
+          io.to(`restaurant:${req.admin._id.toString()}`).emit('orderStatusUpdated', order);
+          // Emit to customer seated at this table
+          io.to(`table:${order.admin.toString()}:${String(order.tableNumber).trim()}`).emit('orderStatusUpdated', order);
+        }
+      } catch (socketErr) {
+        console.warn('⚠️ Socket emission error on updateOrderStatus:', socketErr.message);
+      }
     }
 
     return res.status(200).json({

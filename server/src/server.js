@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -6,10 +7,12 @@ import authRoutes from './routes/authRoutes.js';
 import menuRoutes from './routes/menuRoutes.js';
 import tableRoutes from './routes/tableRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
+import { initSocket } from './socket.js';
 
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/restoweb';
 
@@ -19,6 +22,9 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+
+// Initialize Socket.io with HTTP server
+initSocket(server);
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -41,14 +47,14 @@ mongoose
   .connect(MONGODB_URI)
   .then(() => {
     console.log('✅ Connected to MongoDB successfully at:', MONGODB_URI);
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`🚀 RestoWeb Server running on http://localhost:${PORT}`);
     });
   })
   .catch((err) => {
     console.error('❌ MongoDB Connection Error:', err.message);
     // Still run the app so other endpoints or health checks can diagnose
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`⚠️ RestoWeb Server running on http://localhost:${PORT} (without DB connection)`);
     });
   });

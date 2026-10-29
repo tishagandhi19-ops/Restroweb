@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   UtensilsCrossed,
@@ -43,6 +43,11 @@ import {
   getRestaurantOrdersApi,
   updateOrderStatusApi,
 } from '../api/orders';
+import {
+  getSocket,
+  joinRestaurantRoom,
+  leaveRestaurantRoom,
+} from '../api/socket';
 
 export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
   const [activeTab, setActiveTab] = useState('menu'); // 'menu' | 'tables' | 'orders'
@@ -51,6 +56,16 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
   // Alerts
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  const showNotification = useCallback((msg, isErr = false) => {
+    if (isErr) {
+      setErrorMsg(msg);
+      setTimeout(() => setErrorMsg(''), 4000);
+    } else {
+      setSuccessMsg(msg);
+      setTimeout(() => setSuccessMsg(''), 3000);
+    }
+  }, []);
 
   // Menu State
   const [menuItems, setMenuItems] = useState([]);
@@ -91,6 +106,45 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
   const [orderDateFilter, setOrderDateFilter] = useState('today'); // 'today' | 'all'
   const [orderStatusFilter, setOrderStatusFilter] = useState('all');
   const [printReceiptOrder, setPrintReceiptOrder] = useState(null);
+  const [socketConnected, setSocketConnected] = useState(false);
+
+  const restaurantId = admin?._id || admin?.id;
+
+  // Synthesize a pleasant chime alert using Web Audio API when a new order arrives
+  const playOrderAlertSound = useCallback(() => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+
+      // Tone 1: 880Hz (A5)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(880, now);
+      gain1.gain.setValueAtTime(0.25, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.25);
+
+      // Tone 2: 1174.66Hz (D6)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(1174.66, now + 0.15);
+      gain2.gain.setValueAtTime(0.3, now + 0.15);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.15);
+      osc2.stop(now + 0.5);
+    } catch (e) {
+      console.warn('Audio alert could not play:', e);
+    }
+  }, []);
 
   // Default Categories
   const defaultCategories = ['Starters', 'Main Course', 'Desserts', 'Beverages', 'Sides'];
@@ -139,20 +193,57 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
     loadTables();
     loadOrders();
 
-    // Auto-refresh orders every 12 seconds
-    const interval = setInterval(loadOrders, 12000);
-    return () => clearInterval(interval);
-  }, []);
+    if (!restaurantId) return;
 
-  const showNotification = (msg, isErr = false) => {
-    if (isErr) {
-      setErrorMsg(msg);
-      setTimeout(() => setErrorMsg(''), 4000);
-    } else {
-      setSuccessMsg(msg);
-      setTimeout(() => setSuccessMsg(''), 3000);
+    // Connect to Socket.io for Real-Time Instant Order Streaming
+    const socket = getSocket();
+    joinRestaurantRoom(restaurantId);
+
+    const handleConnect = () => {
+      setSocketConnected(true);
+      joinRestaurantRoom(restaurantId);
+      // Re-fetch orders on reconnection to ensure consistency
+      loadOrders();
+    };
+
+    const handleDisconnect = () => {
+      setSocketConnected(false);
+    };
+
+    const handleNewOrder = (newOrder) => {
+      if (!newOrder) return;
+      // Prepend incoming order instantly
+      setOrders((prev) => [newOrder, ...prev.filter((o) => o._id !== newOrder._id)]);
+      // Play audio chime
+      playOrderAlertSound();
+      // Show notification banner
+      showNotification(
+        `🔔 New order received from Table ${newOrder.tableNumber}! (${newOrder.items?.length || 0} items - $${Number(newOrder.totalAmount || 0).toFixed(2)})`
+      );
+    };
+
+    const handleOrderStatusUpdated = (updatedOrder) => {
+      if (!updatedOrder) return;
+      setOrders((prev) => prev.map((o) => (o._id === updatedOrder._id ? updatedOrder : o)));
+    };
+
+    if (socket.connected) {
+      setSocketConnected(true);
     }
-  };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('newOrder', handleNewOrder);
+    socket.on('orderStatusUpdated', handleOrderStatusUpdated);
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('newOrder', handleNewOrder);
+      socket.off('orderStatusUpdated', handleOrderStatusUpdated);
+      leaveRestaurantRoom(restaurantId);
+    };
+  }, [restaurantId, playOrderAlertSound, showNotification]);
 
   // Menu Handlers
   const handleOpenAddMenu = () => {
@@ -729,6 +820,29 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
                 <p className="section-subtitle">
                   Orders placed in real-time by guests seated at your dining tables after scanning their QR code.
                 </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '0.78rem',
+                    fontWeight: '600',
+                    padding: '3px 10px',
+                    borderRadius: '999px',
+                    background: socketConnected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                    color: socketConnected ? '#10b981' : '#f59e0b',
+                    border: `1px solid ${socketConnected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                  }}>
+                    <span style={{
+                      width: '7px',
+                      height: '7px',
+                      borderRadius: '50%',
+                      backgroundColor: socketConnected ? '#10b981' : '#f59e0b',
+                      boxShadow: socketConnected ? '0 0 8px #10b981' : 'none'
+                    }} />
+                    {socketConnected ? '⚡ Live Real-Time Active (Socket.io)' : 'Connecting Real-Time...'}
+                  </span>
+                </div>
               </div>
 
               <button

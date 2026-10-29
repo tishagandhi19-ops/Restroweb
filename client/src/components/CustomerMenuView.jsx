@@ -25,6 +25,7 @@ import {
 import { getPublicMenuApi } from '../api/menu';
 import { placeTableOrderApi, getSessionOrdersApi } from '../api/orders';
 import { verifyPublicTableApi } from '../api/tables';
+import { getSocket, joinTableRoom, leaveTableRoom } from '../api/socket';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -222,17 +223,63 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
     }
   }, [customer, restaurantId, tableNumber]);
 
-  // Real-time polling every 5 seconds for current session orders
+  // Real-time Socket.io live tracking for current dining table
   useEffect(() => {
-    if (!customer) return;
+    if (!customer || !restaurantId || !tableNumber) return;
 
+    // Initial fetch of orders placed in this session
     fetchLiveSessionOrders();
-    const interval = setInterval(() => {
-      fetchLiveSessionOrders();
-    }, 5000);
 
-    return () => clearInterval(interval);
-  }, [customer, fetchLiveSessionOrders]);
+    const socket = getSocket();
+    joinTableRoom(restaurantId, tableNumber);
+
+    const handleConnect = () => {
+      joinTableRoom(restaurantId, tableNumber);
+      fetchLiveSessionOrders();
+    };
+
+    const handleOrderStatusUpdated = (updatedOrder) => {
+      if (!updatedOrder) return;
+      setSessionOrders((prev) => {
+        const exists = prev.some((o) => o._id === updatedOrder._id);
+        if (exists) {
+          return prev.map((o) => (o._id === updatedOrder._id ? updatedOrder : o));
+        }
+        // If order belongs to this table and session, include it
+        if (
+          String(updatedOrder.tableNumber).trim() === String(tableNumber).trim() &&
+          (!customer?.createdAt || new Date(updatedOrder.createdAt).getTime() >= new Date(customer.createdAt).getTime())
+        ) {
+          return [updatedOrder, ...prev];
+        }
+        return prev;
+      });
+
+      // Update placedOrder modal / active banner if it's currently showing
+      setPlacedOrder((prev) => (prev && prev._id === updatedOrder._id ? { ...prev, status: updatedOrder.status } : prev));
+    };
+
+    const handleNewOrder = (newOrder) => {
+      if (!newOrder) return;
+      if (String(newOrder.tableNumber).trim() === String(tableNumber).trim()) {
+        setSessionOrders((prev) => {
+          if (prev.some((o) => o._id === newOrder._id)) return prev;
+          return [newOrder, ...prev];
+        });
+      }
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('orderStatusUpdated', handleOrderStatusUpdated);
+    socket.on('newOrder', handleNewOrder);
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('orderStatusUpdated', handleOrderStatusUpdated);
+      socket.off('newOrder', handleNewOrder);
+      leaveTableRoom(restaurantId, tableNumber);
+    };
+  }, [customer, restaurantId, tableNumber, fetchLiveSessionOrders]);
 
   // Handle Customer Form Submit (Name & Mobile)
   const handleCustomerSubmit = (e) => {
