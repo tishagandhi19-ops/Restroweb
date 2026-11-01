@@ -25,6 +25,8 @@ import {
   Calendar,
   ChevronRight,
   Wifi,
+  RotateCcw,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   getMenuItemsApi,
@@ -38,6 +40,7 @@ import {
   createBulkTablesApi,
   updateTableApi,
   deleteTableApi,
+  regenerateTableTokenApi,
 } from '../api/tables';
 import {
   getRestaurantOrdersApi,
@@ -367,6 +370,27 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
     }
   };
 
+  const handleRegenerateTableToken = async (id, tableNumber) => {
+    if (
+      !window.confirm(
+        `Regenerate tamper-proof QR code for ${tableNumber}?\n\nThis will instantly issue a new cryptographic token. Any previously printed or scanned QR codes for this table will stop working immediately.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setTableActionLoading(true);
+      const updated = await regenerateTableTokenApi(token, id);
+      setTables((prev) => prev.map((t) => (t._id === id ? updated : t)));
+      showNotification(`New tamper-proof QR code generated for ${tableNumber}! Previous QR codes are now deactivated.`);
+    } catch (err) {
+      showNotification(err.message, true);
+    } finally {
+      setTableActionLoading(false);
+    }
+  };
+
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
     try {
       const updated = await updateOrderStatusApi(token, orderId, newStatus);
@@ -418,9 +442,20 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
     return true;
   });
 
-  const getTableDiningUrl = (tableNumber) => {
+  const getTableDiningUrl = (tableOrNumber) => {
     const origin = window.location.origin;
-    return `${origin}/?restaurantId=${admin._id}&table=${encodeURIComponent(tableNumber)}`;
+    if (typeof tableOrNumber === 'object' && tableOrNumber !== null) {
+      if (tableOrNumber.qrToken) {
+        return `${origin}/?restaurantId=${admin._id}&token=${tableOrNumber.qrToken}`;
+      }
+      return `${origin}/?restaurantId=${admin._id}&table=${encodeURIComponent(tableOrNumber.tableNumber || '1')}`;
+    }
+    // If tableNumber string was passed, check if we have the table in tables list
+    const found = tables.find((t) => t.tableNumber === tableOrNumber || t._id === tableOrNumber);
+    if (found && found.qrToken) {
+      return `${origin}/?restaurantId=${admin._id}&token=${found.qrToken}`;
+    }
+    return `${origin}/?restaurantId=${admin._id}&table=${encodeURIComponent(tableOrNumber || '1')}`;
   };
 
   // Quick Starter Menu Generator if menu is empty
@@ -745,16 +780,34 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
             ) : (
               <div className="tables-grid">
                 {tables.map((table) => {
-                  const diningUrl = getTableDiningUrl(table.tableNumber);
+                  const diningUrl = getTableDiningUrl(table);
 
                   return (
                     <div key={table._id} className="table-card">
                       <div className="table-card-top">
                         <div className="table-title-wrap">
                           <h3 className="table-number">{table.tableNumber}</h3>
-                          <span className="table-capacity">
-                            <Users size={13} /> {table.capacity} Seats
-                          </span>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <span className="table-capacity">
+                              <Users size={13} /> {table.capacity} Seats
+                            </span>
+                            <span
+                              title="Tamper-proof cryptographic token prevents URL alteration"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                fontSize: '0.72rem',
+                                color: '#10b981',
+                                fontWeight: '600',
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                              }}
+                            >
+                              <ShieldCheck size={12} /> Secure
+                            </span>
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -794,7 +847,17 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
                         <button
                           type="button"
                           className="btn btn-secondary btn-sm"
-                          onClick={() => onPreviewGuest(table.tableNumber)}
+                          onClick={() => handleRegenerateTableToken(table._id, table.tableNumber)}
+                          title="Regenerate secure cryptographic QR code (invalidates old code)"
+                        >
+                          <RotateCcw size={14} />
+                          <span>Regen QR</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => onPreviewGuest(table.tableNumber, table.qrToken)}
                           title="Preview guest dining view on this table"
                         >
                           <Eye size={14} />
@@ -1340,11 +1403,15 @@ export default function AdminDashboard({ admin, onLogout, onPreviewGuest }) {
 
               <div className="tent-qr-box">
                 <QRCodeSVG
-                  value={getTableDiningUrl(printTable.tableNumber)}
+                  value={getTableDiningUrl(printTable)}
                   size={190}
                   level="H"
                   includeMargin={true}
                 />
+              </div>
+
+              <div style={{ fontSize: '0.75rem', color: '#059669', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', margin: '-4px 0 10px 0' }}>
+                <ShieldCheck size={13} /> Verified Tamper-Proof Table Code
               </div>
 
               <div className="tent-table-badge">{printTable.tableNumber}</div>

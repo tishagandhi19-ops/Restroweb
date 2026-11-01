@@ -29,8 +29,9 @@ import { getSocket, joinTableRoom, leaveTableRoom } from '../api/socket';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
-function getSessionKey(restaurantId, tableNumber) {
-  return `restoweb_customer_${restaurantId}_table_${String(tableNumber || '1').trim().toLowerCase()}`;
+function getSessionKey(restaurantId, token, tableNumber) {
+  const tablePart = token ? `token_${token}` : `table_${String(tableNumber || '1').trim().toLowerCase()}`;
+  return `restoweb_customer_${restaurantId}_${tablePart}`;
 }
 
 // Status step mapping for live visual tracker
@@ -57,7 +58,7 @@ function getStepIndex(status) {
   }
 }
 
-export default function CustomerMenuView({ restaurantId, tableNumber }) {
+export default function CustomerMenuView({ restaurantId, token, tableNumber, onBackToAdmin }) {
   const [loading, setLoading] = useState(true);
   const [tableData, setTableData] = useState(null);
   const [error, setError] = useState('');
@@ -65,6 +66,12 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
   const [menuItems, setMenuItems] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Resolved table display label
+  const displayTableNumber = tableData?.tableNumber || tableNumber || '1';
+  const formattedTableLabel = /^Table/i.test(displayTableNumber)
+    ? displayTableNumber
+    : `Table ${displayTableNumber}`;
 
   // Customer Session State (1-Hour Expiry)
   const [customer, setCustomer] = useState(null);
@@ -98,8 +105,10 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
 
   // Helper to load session from localStorage if within 1 hour
   const checkStoredSession = useCallback(() => {
-    if (!restaurantId || !tableNumber) return null;
-    const key = getSessionKey(restaurantId, tableNumber);
+    if (!restaurantId || (!token && !tableNumber && !tableData)) return null;
+    const currentTable = tableData?.tableNumber || tableNumber || '1';
+    const currentToken = token || tableData?.qrToken;
+    const key = getSessionKey(restaurantId, currentToken, currentTable);
     const raw = localStorage.getItem(key);
     if (!raw) return null;
 
@@ -119,7 +128,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
       localStorage.removeItem(key);
       return null;
     }
-  }, [restaurantId, tableNumber]);
+  }, [restaurantId, token, tableNumber, tableData]);
 
   // Periodic check to update remaining session time & detect expiry
   useEffect(() => {
@@ -151,20 +160,32 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
         return;
       }
 
+      if (!token && !tableNumber) {
+        setError('Missing table security token. Please scan the QR code physically present at your table stand.');
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
         setError('');
 
-        // Step 1: Verify Table QR validity
+        // Step 1: Verify Table QR validity via cryptographic token or legacy number
+        let verified = null;
         try {
-          const verifyRes = await verifyPublicTableApi(restaurantId, tableNumber || '1');
+          const verifyRes = await verifyPublicTableApi({
+            restaurantId,
+            token,
+            tableNumber,
+          });
           if (verifyRes.valid) {
+            verified = verifyRes.table;
             setTableData(verifyRes.table);
           }
         } catch (tableErr) {
           setError(
             tableErr.message ||
-              `Table ${tableNumber || '1'} could not be verified. Please ensure you scanned the correct QR code on your table.`
+              'Table could not be verified. Please ensure you scanned the authentic QR code on your table stand.'
           );
           setLoading(false);
           return;
@@ -176,7 +197,27 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
         setMenuItems(menuRes.data || []);
 
         // Step 3: Check 1-Hour Customer Session in localStorage
-        const existingSession = checkStoredSession();
+        const verifiedToken = token || verified?.qrToken;
+        const verifiedNum = verified?.tableNumber || tableNumber || '1';
+        const key = getSessionKey(restaurantId, verifiedToken, verifiedNum);
+        const raw = localStorage.getItem(key);
+        let existingSession = null;
+        if (raw) {
+          try {
+            const data = JSON.parse(raw);
+            const elapsed = Date.now() - (data.createdAt || 0);
+            if (elapsed < ONE_HOUR_MS) {
+              existingSession = data;
+              const remainingMins = Math.max(1, Math.ceil((ONE_HOUR_MS - elapsed) / 60000));
+              setSessionTimeLeft(remainingMins);
+            } else {
+              localStorage.removeItem(key);
+            }
+          } catch {
+            localStorage.removeItem(key);
+          }
+        }
+
         if (existingSession) {
           // Session active within 1 hour! Auto-resume without prompting for name/phone
           setCustomer(existingSession);
@@ -200,18 +241,21 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
     }
 
     initTableAndMenu();
-  }, [restaurantId, tableNumber, checkStoredSession]);
+  }, [restaurantId, token, tableNumber]);
 
   // Fetch real-time orders placed exclusively in the current session
   const fetchLiveSessionOrders = useCallback(async (isManualRefresh = false) => {
-    if (!customer || !restaurantId || !tableNumber) return;
+    const currentTable = tableData?.tableNumber || tableNumber;
+    const currentToken = token || tableData?.qrToken;
+    if (!customer || !restaurantId || (!currentTable && !currentToken)) return;
 
     if (isManualRefresh) setRefreshingOrders(true);
     try {
       const orders = await getSessionOrdersApi({
         orderIds: customer.orderIds || [],
         restaurantId,
-        tableNumber: String(tableNumber || '1').trim(),
+        tableNumber: currentTable ? String(currentTable).trim() : undefined,
+        tableToken: currentToken || undefined,
         customerPhone: customer.customerPhone,
         since: customer.createdAt,
       });
@@ -221,20 +265,21 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
     } finally {
       if (isManualRefresh) setRefreshingOrders(false);
     }
-  }, [customer, restaurantId, tableNumber]);
+  }, [customer, restaurantId, tableData, token, tableNumber]);
 
   // Real-time Socket.io live tracking for current dining table
   useEffect(() => {
-    if (!customer || !restaurantId || !tableNumber) return;
+    const currentTable = tableData?.tableNumber || tableNumber;
+    if (!customer || !restaurantId || !currentTable) return;
 
     // Initial fetch of orders placed in this session
     fetchLiveSessionOrders();
 
     const socket = getSocket();
-    joinTableRoom(restaurantId, tableNumber);
+    joinTableRoom(restaurantId, currentTable);
 
     const handleConnect = () => {
-      joinTableRoom(restaurantId, tableNumber);
+      joinTableRoom(restaurantId, currentTable);
       fetchLiveSessionOrders();
     };
 
@@ -247,7 +292,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
         }
         // If order belongs to this table and session, include it
         if (
-          String(updatedOrder.tableNumber).trim() === String(tableNumber).trim() &&
+          String(updatedOrder.tableNumber).trim() === String(currentTable).trim() &&
           (!customer?.createdAt || new Date(updatedOrder.createdAt).getTime() >= new Date(customer.createdAt).getTime())
         ) {
           return [updatedOrder, ...prev];
@@ -261,7 +306,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
 
     const handleNewOrder = (newOrder) => {
       if (!newOrder) return;
-      if (String(newOrder.tableNumber).trim() === String(tableNumber).trim()) {
+      if (String(newOrder.tableNumber).trim() === String(currentTable).trim()) {
         setSessionOrders((prev) => {
           if (prev.some((o) => o._id === newOrder._id)) return prev;
           return [newOrder, ...prev];
@@ -277,9 +322,9 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
       socket.off('connect', handleConnect);
       socket.off('orderStatusUpdated', handleOrderStatusUpdated);
       socket.off('newOrder', handleNewOrder);
-      leaveTableRoom(restaurantId, tableNumber);
+      leaveTableRoom(restaurantId, currentTable);
     };
-  }, [customer, restaurantId, tableNumber, fetchLiveSessionOrders]);
+  }, [customer, restaurantId, tableData, tableNumber, fetchLiveSessionOrders]);
 
   // Handle Customer Form Submit (Name & Mobile)
   const handleCustomerSubmit = (e) => {
@@ -297,17 +342,21 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
       return;
     }
 
+    const currentTable = tableData?.tableNumber || tableNumber || '1';
+    const currentToken = token || tableData?.qrToken;
+
     const sessionPayload = {
       customerName: name.trim(),
       customerPhone: phone.trim(),
       restaurantId,
-      tableNumber: tableNumber || '1',
+      tableNumber: currentTable,
+      tableToken: currentToken,
       orderIds: customer?.orderIds || [],
       createdAt: customer?.createdAt || Date.now(),
       lastActiveAt: Date.now(),
     };
 
-    const key = getSessionKey(restaurantId, tableNumber);
+    const key = getSessionKey(restaurantId, currentToken, currentTable);
     localStorage.setItem(key, JSON.stringify(sessionPayload));
 
     setCustomer(sessionPayload);
@@ -382,9 +431,13 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
 
     try {
       setPlacingOrder(true);
+      const currentTable = tableData?.tableNumber || tableNumber || '1';
+      const currentToken = token || tableData?.qrToken;
+
       const orderPayload = {
         restaurantId,
-        tableNumber: String(tableNumber || '1').trim(),
+        tableNumber: String(currentTable).trim(),
+        tableToken: currentToken || undefined,
         customerName: activeCustomer.customerName,
         customerPhone: activeCustomer.customerPhone,
         items: cartItemsList.map((item) => ({
@@ -408,7 +461,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
         lastActiveAt: Date.now(),
       };
 
-      const key = getSessionKey(restaurantId, tableNumber);
+      const key = getSessionKey(restaurantId, currentToken, currentTable);
       localStorage.setItem(key, JSON.stringify(updatedSession));
       setCustomer(updatedSession);
 
@@ -452,7 +505,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
         <div className="guest-loading-box">
           <Loader2 size={36} className="spinner" />
           <h2>Verifying Table QR</h2>
-          <p>Connecting to {tableNumber ? `Table ${tableNumber}` : 'your table'}...</p>
+          <p>Connecting to {formattedTableLabel}...</p>
         </div>
       </div>
     );
@@ -494,7 +547,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
               <div className="guest-badges-row">
                 <span className="guest-table-badge">
                   <MapPin size={12} />
-                  <span>Table {tableNumber || '1'}{tableData?.capacity ? ` • ${tableData.capacity} Seats` : ''}</span>
+                  <span>{formattedTableLabel}{tableData?.capacity ? ` • ${tableData.capacity} Seats` : ''}</span>
                 </span>
                 {customer && (
                   <span
@@ -544,7 +597,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
           <CheckCircle2 size={18} color="#15803d" />
           <div className="toast-text">
             <strong>Welcome back, {customer.customerName}!</strong>
-            <span> Dining session resumed for <strong>Table {tableNumber}</strong> ({sessionTimeLeft} mins remaining). Place additional orders anytime!</span>
+            <span> Dining session resumed for <strong>{formattedTableLabel}</strong> ({sessionTimeLeft} mins remaining). Place additional orders anytime!</span>
           </div>
           <button
             type="button"
@@ -979,7 +1032,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
           <div className="modal-card guest-order-modal">
             <div className="modal-header">
               <div>
-                <h2>Table {tableNumber || '1'} Order Summary</h2>
+                <h2>{formattedTableLabel} Order Summary</h2>
                 <div className="guest-order-customer-line">
                   <User size={13} />
                   <span>
@@ -1074,7 +1127,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
             <div className="cart-totals-summary">
               <div className="summary-row">
                 <span>Table</span>
-                <strong>Table {tableNumber || '1'}</strong>
+                <strong>{formattedTableLabel}</strong>
               </div>
               <div className="summary-row">
                 <span>Diner</span>
@@ -1108,7 +1161,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
                 ) : (
                   <>
                     <ChefHat size={16} />
-                    <span>Send Order for Table {tableNumber || '1'}</span>
+                    <span>Send Order for {formattedTableLabel}</span>
                   </>
                 )}
               </button>
@@ -1118,7 +1171,7 @@ export default function CustomerMenuView({ restaurantId, tableNumber }) {
       )}
 
       <footer className="guest-footer">
-        <p>RestoWeb Digital Dining • Table {tableNumber || '1'} Contactless Menu</p>
+        <p>RestoWeb Digital Dining • {formattedTableLabel} Contactless Menu</p>
       </footer>
     </div>
   );

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import Table from '../models/Table.js';
 import Admin from '../models/Admin.js';
 
@@ -6,7 +7,20 @@ import Admin from '../models/Admin.js';
 // @access  Private (Admin)
 export const getTables = async (req, res) => {
   try {
-    const tables = await Table.find({ admin: req.admin._id }).sort({ createdAt: 1 });
+    let tables = await Table.find({ admin: req.admin._id }).sort({ createdAt: 1 });
+
+    // Auto-migrate: Generate qrToken for any existing tables that don't have one yet
+    const tablesWithoutToken = tables.filter((t) => !t.qrToken);
+    if (tablesWithoutToken.length > 0) {
+      await Promise.all(
+        tablesWithoutToken.map(async (table) => {
+          table.qrToken = crypto.randomBytes(12).toString('hex');
+          return table.save();
+        })
+      );
+      tables = await Table.find({ admin: req.admin._id }).sort({ createdAt: 1 });
+    }
+
     return res.status(200).json({
       success: true,
       count: tables.length,
@@ -51,6 +65,7 @@ export const createTable = async (req, res) => {
     const table = await Table.create({
       admin: req.admin._id,
       tableNumber: tableNumber.trim(),
+      qrToken: crypto.randomBytes(12).toString('hex'),
       capacity: capacity ? Number(capacity) : 4,
       status: status || 'Available',
     });
@@ -92,6 +107,7 @@ export const createBulkTables = async (req, res) => {
         newTablesToInsert.push({
           admin: req.admin._id,
           tableNumber: label,
+          qrToken: crypto.randomBytes(12).toString('hex'),
           capacity: capNum,
           status: 'Available',
         });
@@ -199,18 +215,51 @@ export const deleteTable = async (req, res) => {
   }
 };
 
+// @desc    Regenerate a table's QR security token (invalidates old QR codes)
+// @route   POST /api/tables/:id/regenerate-token
+// @access  Private (Admin)
+export const regenerateTableToken = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const table = await Table.findOne({ _id: id, admin: req.admin._id });
+    if (!table) {
+      return res.status(404).json({
+        success: false,
+        message: 'Table not found or not authorized.',
+      });
+    }
+
+    table.qrToken = crypto.randomBytes(12).toString('hex');
+    await table.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `QR code for ${table.tableNumber} regenerated successfully! Old QR codes are now inactive.`,
+      data: table,
+    });
+  } catch (error) {
+    console.error('regenerateTableToken error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to regenerate table QR token.',
+    });
+  }
+};
+
 // @desc    Verify if a table QR code is valid for a restaurant
 // @route   GET /api/tables/public/verify
 // @access  Public (Guest scanner)
 export const verifyPublicTable = async (req, res) => {
   try {
-    const { restaurantId, tableNumber } = req.query;
+    const { restaurantId, token, tableToken, tableNumber } = req.query;
+    const qrToken = token || tableToken;
 
-    if (!restaurantId || !tableNumber) {
+    if (!restaurantId || (!qrToken && !tableNumber)) {
       return res.status(400).json({
         success: false,
         valid: false,
-        message: 'Missing restaurant ID or table number.',
+        message: 'Missing restaurant ID or table security token in QR code.',
       });
     }
 
@@ -223,20 +272,45 @@ export const verifyPublicTable = async (req, res) => {
       });
     }
 
-    const tableNumTrimmed = String(tableNumber).trim();
-    // Search by exact tableNumber or tableNumber with prefix (e.g. "8" or "Table 8")
-    const tableRegex = new RegExp(`^(Table\\s*)?${tableNumTrimmed.replace(/^Table\s*/i, '')}$`, 'i');
-    const table = await Table.findOne({
-      admin: restaurantId,
-      tableNumber: { $regex: tableRegex },
-    });
+    let table = null;
 
-    if (!table) {
-      return res.status(404).json({
-        success: false,
-        valid: false,
-        message: `Table "${tableNumTrimmed}" is not recognized for ${admin.restaurantName || 'this restaurant'}. Please ask staff for assistance.`,
+    if (qrToken) {
+      // 1. Secure Cryptographic Token Lookup: Prevents URL tampering
+      table = await Table.findOne({
+        admin: restaurantId,
+        qrToken: String(qrToken).trim(),
       });
+
+      if (!table) {
+        return res.status(404).json({
+          success: false,
+          valid: false,
+          tampered: true,
+          message: 'Invalid or expired table QR code. Please scan the QR code physically present at your table.',
+        });
+      }
+    } else if (tableNumber) {
+      // 2. Legacy Fallback: Lookup by table number
+      const tableNumTrimmed = String(tableNumber).trim();
+      const tableRegex = new RegExp(`^(Table\\s*)?${tableNumTrimmed.replace(/^Table\\s*/i, '')}$`, 'i');
+      table = await Table.findOne({
+        admin: restaurantId,
+        tableNumber: { $regex: tableRegex },
+      });
+
+      if (!table) {
+        return res.status(404).json({
+          success: false,
+          valid: false,
+          message: `Table "${tableNumTrimmed}" is not recognized for ${admin.restaurantName || 'this restaurant'}. Please ask staff for assistance.`,
+        });
+      }
+
+      // Ensure token exists on legacy tables
+      if (!table.qrToken) {
+        table.qrToken = crypto.randomBytes(12).toString('hex');
+        await table.save();
+      }
     }
 
     return res.status(200).json({
@@ -245,6 +319,7 @@ export const verifyPublicTable = async (req, res) => {
       table: {
         _id: table._id,
         tableNumber: table.tableNumber,
+        qrToken: table.qrToken,
         capacity: table.capacity,
         status: table.status,
       },

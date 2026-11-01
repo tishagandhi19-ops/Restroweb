@@ -1,5 +1,6 @@
 import Order from '../models/Order.js';
 import Admin from '../models/Admin.js';
+import Table from '../models/Table.js';
 import { getIO } from '../socket.js';
 
 // @desc    Guest places order for a specific table after scanning QR code
@@ -7,12 +8,13 @@ import { getIO } from '../socket.js';
 // @access  Public (Guest at table)
 export const createPublicOrder = async (req, res) => {
   try {
-    const { restaurantId, tableNumber, items, totalAmount, notes, customerName, customerPhone } = req.body;
+    const { restaurantId, tableNumber, tableToken, token, items, totalAmount, notes, customerName, customerPhone } = req.body;
+    const qrToken = tableToken || token;
 
-    if (!restaurantId || !tableNumber || !items || !Array.isArray(items) || items.length === 0) {
+    if (!restaurantId || (!tableNumber && !qrToken) || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Order must include restaurant, table number, and at least one item.',
+        message: 'Order must include restaurant, table verification, and at least one item.',
       });
     }
 
@@ -24,9 +26,36 @@ export const createPublicOrder = async (req, res) => {
       });
     }
 
+    let resolvedTableNumber = tableNumber;
+
+    // Cryptographic validation: Verify table against authentic qrToken if provided
+    if (qrToken) {
+      const table = await Table.findOne({
+        admin: restaurantId,
+        qrToken: String(qrToken).trim(),
+      });
+
+      if (!table) {
+        return res.status(403).json({
+          success: false,
+          message: 'Invalid or expired table security token. Please rescan the QR code on your table.',
+        });
+      }
+
+      // Enforce authentic table number directly from the verified table record
+      resolvedTableNumber = table.tableNumber;
+    }
+
+    if (!resolvedTableNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid table number or table security token is required.',
+      });
+    }
+
     const order = await Order.create({
       admin: restaurantId,
-      tableNumber: String(tableNumber).trim(),
+      tableNumber: String(resolvedTableNumber).trim(),
       customerName: customerName ? String(customerName).trim() : 'Guest',
       customerPhone: customerPhone ? String(customerPhone).trim() : '',
       items,
@@ -42,7 +71,7 @@ export const createPublicOrder = async (req, res) => {
         // Emit to Restaurant Admin Dashboard
         io.to(`restaurant:${restaurantId}`).emit('newOrder', order);
         // Emit to Customers seated at this table
-        io.to(`table:${restaurantId}:${String(tableNumber).trim()}`).emit('newOrder', order);
+        io.to(`table:${restaurantId}:${String(resolvedTableNumber).trim()}`).emit('newOrder', order);
       }
     } catch (socketErr) {
       console.warn('⚠️ Socket emission error on createPublicOrder:', socketErr.message);
@@ -50,7 +79,7 @@ export const createPublicOrder = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: `Order placed successfully for Table ${tableNumber}!`,
+      message: `Order placed successfully for ${resolvedTableNumber}!`,
       data: order,
     });
   } catch (error) {
@@ -135,7 +164,19 @@ export const updateOrderStatus = async (req, res) => {
 // @access  Public (Guest seated at table)
 export const getSessionOrders = async (req, res) => {
   try {
-    const { orderIds, restaurantId, tableNumber, customerPhone, since } = req.body;
+    const { orderIds, restaurantId, tableNumber, tableToken, token, customerPhone, since } = req.body;
+    const qrToken = tableToken || token;
+
+    let resolvedTableNumber = tableNumber;
+    if (qrToken && restaurantId) {
+      const table = await Table.findOne({
+        admin: restaurantId,
+        qrToken: String(qrToken).trim(),
+      });
+      if (table) {
+        resolvedTableNumber = table.tableNumber;
+      }
+    }
 
     const queryFilters = [];
 
@@ -145,12 +186,12 @@ export const getSessionOrders = async (req, res) => {
     }
 
     // Filter 2: Session-based fallback strictly created on or after session start time
-    if (restaurantId && tableNumber && since) {
+    if (restaurantId && resolvedTableNumber && since) {
       const sessionStart = new Date(Number(since) || since);
       if (!isNaN(sessionStart.getTime())) {
         const fallbackQuery = {
           admin: restaurantId,
-          tableNumber: String(tableNumber).trim(),
+          tableNumber: String(resolvedTableNumber).trim(),
           createdAt: { $gte: sessionStart },
         };
         if (customerPhone) {

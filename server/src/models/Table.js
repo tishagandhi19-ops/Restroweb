@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 
 const tableSchema = new mongoose.Schema(
   {
@@ -11,6 +12,13 @@ const tableSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Please provide a table number or name'],
       trim: true,
+    },
+    qrToken: {
+      type: String,
+      unique: true,
+      sparse: true,
+      default: () => crypto.randomBytes(12).toString('hex'),
+      index: true,
     },
     capacity: {
       type: Number,

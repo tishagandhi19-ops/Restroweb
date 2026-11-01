@@ -34,9 +34,10 @@ export default function AdminAuth({ onPreviewGuest: externalPreviewGuest } = {})
   const [guestView, setGuestView] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const restaurantId = params.get('restaurantId');
+    const token = params.get('token') || params.get('tableToken');
     const table = params.get('table');
-    if (restaurantId) {
-      return { restaurantId, tableNumber: table || '1' };
+    if (restaurantId && (token || table)) {
+      return { restaurantId, token: token || null, tableNumber: table || null };
     }
     return null;
   });
@@ -176,6 +177,7 @@ export default function AdminAuth({ onPreviewGuest: externalPreviewGuest } = {})
     return (
       <CustomerMenuView
         restaurantId={guestView.restaurantId}
+        token={guestView.token}
         tableNumber={guestView.tableNumber}
         onBackToAdmin={() => {
           if (window.location.search) {
@@ -193,14 +195,18 @@ export default function AdminAuth({ onPreviewGuest: externalPreviewGuest } = {})
       <AdminDashboard
         admin={currentAdmin}
         onLogout={handleLogout}
-        onPreviewGuest={(tableNumber) => {
-          const newUrl = `${window.location.pathname}?restaurantId=${currentAdmin._id}&table=${encodeURIComponent(tableNumber)}`;
+        onPreviewGuest={(tableNumber, token) => {
+          const query = token
+            ? `restaurantId=${currentAdmin._id}&token=${token}`
+            : `restaurantId=${currentAdmin._id}&table=${encodeURIComponent(tableNumber)}`;
+          const newUrl = `${window.location.pathname}?${query}`;
           window.history.pushState({}, '', newUrl);
           if (externalPreviewGuest) {
-            externalPreviewGuest(currentAdmin._id, tableNumber);
+            externalPreviewGuest(currentAdmin._id, tableNumber, token);
           } else {
             setGuestView({
               restaurantId: currentAdmin._id,
+              token: token || null,
               tableNumber,
             });
           }
